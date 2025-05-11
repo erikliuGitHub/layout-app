@@ -3,6 +3,7 @@ import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import './index.css';
 import { calculateMandays, calculateEndDate, getRandomDate } from './utils/dateUtils';
+import SplitIpModal from "./components/SplitIpModal";
 
 // Define large unique designers and layoutOwners arrays
 const designers = Array.from({ length: 50 }, (_, i) => `Designer_${i + 1}`);
@@ -850,6 +851,12 @@ export default function App() {
                 ))}
               </select>
             </div>
+            {/* Split IP Modal */}
+            <SplitIpModal
+              projectsData={projectsData}
+              setProjectsData={setProjectsData}
+              allLayoutOwners={allLayoutOwners}
+            />
             <div
               style={{
                 overflowX: "auto", overflowY: "auto", maxHeight: "500px",
@@ -859,80 +866,94 @@ export default function App() {
               }}
             >
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ position: "sticky", top: 0, zIndex: 1, background: "#f1f5f9" }}>
-                  <th
-                    style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
-                    onClick={() => handleSortGeneric("projectId", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
-                  >
-                    Project
-                    {layoutLeaderSortConfig.key === "projectId" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
-                  </th>
-                  <th
-                    style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
-                    onClick={() => handleSortGeneric("ipName", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
-                  >
-                    IP Name
-                    {layoutLeaderSortConfig.key === "ipName" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
-                  </th>
-                  <th
-                    style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
-                    onClick={() => handleSortGeneric("designer", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
-                  >
-                    Designer
-                    {layoutLeaderSortConfig.key === "designer" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
-                  </th>
-                  <th
-                    style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
-                    onClick={() => handleSortGeneric("layoutOwner", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
-                  >
-                    Layout Owner
-                    {layoutLeaderSortConfig.key === "layoutOwner" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
-                  </th>
-                  <th
-                    style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
-                    onClick={() => handleSortGeneric("schematicFreeze", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
-                  >
-                    Schematic Freeze
-                    {layoutLeaderSortConfig.key === "schematicFreeze" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
-                  </th>
-                  <th
-                    style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
-                    onClick={() => handleSortGeneric("lvsClean", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
-                  >
-                    LVS Clean
-                    {layoutLeaderSortConfig.key === "lvsClean" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
-                  </th>
-                  <th
-                    style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
-                    onClick={() => handleSortGeneric("plannedMandays", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
-                  >
-                    Mandays
-                    {layoutLeaderSortConfig.key === "plannedMandays" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
-                  </th>
-                  <th
-                    style={{ padding: "10px", fontWeight: "600", fontSize: 15 }}
-                  >
-                    Action
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...Object.entries(projectsData)]
-                  .sort(([a], [b]) => a.localeCompare(b))
-                  .flatMap(([projectId, entries]) =>
-                    // Filter by layoutOwnerFilter before mapping
-                    sortData(
-                      entries
-                        .filter(item =>
-                          item.ipName && item.schematicFreeze && item.lvsClean
-                        )
-                        .filter(item =>
-                          (!layoutOwnerFilter || item.layoutOwner === layoutOwnerFilter)
-                        )
-                        .map(item => ({ ...item, projectId })),
-                      layoutLeaderSortConfig
-                    ).map((item, idx) => {
+                <thead>
+                  <tr style={{ position: "sticky", top: 0, zIndex: 1, background: "#f1f5f9" }}>
+                    <th
+                      style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
+                      onClick={() => handleSortGeneric("projectId", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
+                    >
+                      Project
+                      {layoutLeaderSortConfig.key === "projectId" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                    </th>
+                    <th
+                      style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
+                      onClick={() => handleSortGeneric("ipName", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
+                    >
+                      IP Name
+                      {layoutLeaderSortConfig.key === "ipName" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                    </th>
+                    <th
+                      style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
+                      onClick={() => handleSortGeneric("designer", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
+                    >
+                      Designer
+                      {layoutLeaderSortConfig.key === "designer" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                    </th>
+                    <th
+                      style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
+                      onClick={() => handleSortGeneric("layoutOwner", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
+                    >
+                      Layout Owner
+                      {layoutLeaderSortConfig.key === "layoutOwner" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                    </th>
+                    <th
+                      style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
+                      onClick={() => handleSortGeneric("schematicFreeze", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
+                    >
+                      Schematic Freeze
+                      {layoutLeaderSortConfig.key === "schematicFreeze" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                    </th>
+                    <th
+                      style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
+                      onClick={() => handleSortGeneric("lvsClean", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
+                    >
+                      LVS Clean
+                      {layoutLeaderSortConfig.key === "lvsClean" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                    </th>
+                    <th
+                      style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
+                      onClick={() => handleSortGeneric("plannedMandays", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
+                    >
+                      Mandays
+                      {layoutLeaderSortConfig.key === "plannedMandays" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                    </th>
+                    <th
+                      style={{ padding: "10px", fontWeight: "600", fontSize: 15 }}
+                    >
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    // Compose a flat list of all IPs (with parent/child relationships) and sort them
+                    let allRows = [];
+                    Object.entries(projectsData)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .forEach(([projectId, entries]) => {
+                        // Filter only valid IPs
+                        let validEntries = entries
+                          .filter(item => item.ipName && item.schematicFreeze && item.lvsClean)
+                          .filter(item => (!layoutOwnerFilter || item.layoutOwner === layoutOwnerFilter))
+                          .map((item, idx) => ({ ...item, projectId, _idx: idx }));
+                        // Separate mother IPs and children
+                        let mothers = validEntries.filter(e => !e.parentIp);
+                        let children = validEntries.filter(e => e.parentIp);
+                        // For each mother, push mother and then its children (with "↳" marker)
+                        mothers.forEach(mother => {
+                          allRows.push({ ...mother, _isChild: false });
+                          children.filter(child => child.parentIp === mother.ipName).forEach(child => {
+                            allRows.push({ ...child, _isChild: true });
+                          });
+                        });
+                        // Also, add children that have no valid mother shown (possibly orphaned)
+                        children.filter(child => !mothers.some(m => m.ipName === child.parentIp)).forEach(child => {
+                          allRows.push({ ...child, _isChild: true });
+                        });
+                      });
+                    // Sort according to config
+                    allRows = sortData(allRows, layoutLeaderSortConfig);
+                    return allRows.map((item, idx) => {
                       const today = new Date().toISOString().slice(0, 10);
                       const isPast = item.schematicFreeze && item.schematicFreeze < today;
                       const isLate = item.lvsClean && item.lvsClean < today && !item.layoutClosed;
@@ -941,192 +962,233 @@ export default function App() {
                       else if (isLate) rowStyle = { background: "#fee2e2" };
                       else if (isPast) rowStyle = { background: "#fef3c7" };
                       return (
-                        <tr key={`${projectId}-${idx}`} style={{ borderTop: "1px solid #e5e7eb", ...rowStyle }}>
-                          <td style={{ padding: "8px", fontSize: "14px" }}>{projectId}</td>
-                          <td style={{ padding: "8px", fontSize: "14px" }}>{item.ipName}</td>
-                          <td style={{ padding: "8px", fontSize: "14px" }}>{item.designer}</td>
-                          <td style={{ padding: "8px", fontSize: "14px" }}>
-                            <input
-                              style={{
-                                width: "100%",
-                                fontSize: 14,
-                                border: "1px solid #d1d5db",
-                                borderRadius: 4,
-                                padding: "4px 7px"
-                              }}
-                              value={item.layoutOwner || ""}
-                              onChange={(e) => {
-                                const updated = [...projectsData[projectId]];
-                                updated[idx].layoutOwner = e.target.value;
-                                setProjectsData(prev => ({
-                                  ...prev,
-                                  [projectId]: updated
-                                }));
-                              }}
-                            />
-                          </td>
-                          <td style={{ padding: "8px", fontSize: "14px" }}>
-                            <DatePicker
-                              selected={item.schematicFreeze ? new Date(item.schematicFreeze) : null}
-                              onChange={(date) => {
-                                const updated = [...projectsData[projectId]];
-                                updated[idx].schematicFreeze = date ? date.toISOString().slice(0, 10) : "";
-                                // If plannedMandays exists, recalc lvsClean
-                                if (updated[idx].plannedMandays && updated[idx].schematicFreeze) {
-                                  updated[idx].lvsClean = calculateEndDate(updated[idx].schematicFreeze, parseInt(updated[idx].plannedMandays, 10));
-                                }
-                                setProjectsData(prev => ({
-                                  ...prev,
-                                  [projectId]: updated
-                                }));
-                              }}
-                              customInput={
-                                <input
-                                  style={{
-                                    width: "100%",
-                                    fontSize: 14,
-                                    border: "1px solid #d1d5db",
-                                    borderRadius: 4,
-                                    padding: "4px 7px"
-                                  }}
-                                />
-                              }
-                              dateFormat="yyyy-MM-dd"
-                            />
-                          </td>
-                          <td style={{ padding: "8px", fontSize: "14px" }}>
-                            <DatePicker
-                              selected={item.lvsClean ? new Date(item.lvsClean) : null}
-                              onChange={(date) => {
-                                const updated = [...projectsData[projectId]];
-                                updated[idx].lvsClean = date ? date.toISOString().slice(0, 10) : "";
-                                // If schematicFreeze exists, recalc plannedMandays
-                                if (updated[idx].schematicFreeze && updated[idx].lvsClean) {
-                                  const mandaysNum = calculateMandays(updated[idx].schematicFreeze, updated[idx].lvsClean);
-                                  updated[idx].plannedMandays = mandaysNum !== "" ? mandaysNum.toString() : "";
-                                }
-                                setProjectsData(prev => ({
-                                  ...prev,
-                                  [projectId]: updated
-                                }));
-                              }}
-                              customInput={
-                                <input
-                                  style={{
-                                    width: "100%",
-                                    fontSize: 14,
-                                    border: "1px solid #d1d5db",
-                                    borderRadius: 4,
-                                    padding: "4px 7px"
-                                  }}
-                                />
-                              }
-                              dateFormat="yyyy-MM-dd"
-                            />
-                          </td>
-                          <td style={{ padding: "8px", fontSize: "14px" }}>
-                            <input
-                              style={{
-                                width: "100%",
-                                fontSize: 14,
-                                border: "1px solid #d1d5db",
-                                borderRadius: 4,
-                                padding: "4px 7px"
-                              }}
-                              value={item.plannedMandays || ""}
-                              onChange={e => {
-                                const updated = [...projectsData[projectId]];
-                                updated[idx].plannedMandays = e.target.value;
-                                setProjectsData(prev => ({
-                                  ...prev,
-                                  [projectId]: updated
-                                }));
-                              }}
-                              onBlur={e => {
-                                const updated = [...projectsData[projectId]];
-                                const start = updated[idx].schematicFreeze;
-                                const mandays = parseInt(updated[idx].plannedMandays, 10);
-                                if (start && mandays) {
-                                  updated[idx].lvsClean = calculateEndDate(start, mandays);
-                                  updated[idx].plannedMandays = mandays.toString();
-                                  setProjectsData(prev => ({
-                                    ...prev,
-                                    [projectId]: updated
-                                  }));
-                                }
-                              }}
-                            />
-                          </td>
-                          <td style={{ padding: "8px", fontSize: "14px" }}>
-                            <div style={{ display: "flex", gap: "6px" }}>
-                              <button
-                                onClick={() => {
-                                  const updatedProjects = { ...projectsData };
-                                  const updatedEntries = updatedProjects[projectId].map((entry, i) =>
-                                    i === idx ? { ...entry, layoutClosed: true } : entry
-                                  );
-                                  updatedProjects[projectId] = updatedEntries;
-                                  setProjectsData(updatedProjects);
-                                }}
+                        <React.Fragment key={`${item.projectId}-${item.ipName}-${idx}`}>
+                          <tr style={{ borderTop: "1px solid #e5e7eb", ...rowStyle }}>
+                            <td style={{ padding: "8px", fontSize: "14px" }}>{item.projectId}</td>
+                            <td style={{ padding: "8px", fontSize: "14px" }}>
+                              {item._isChild ? <span style={{ color: "#64748b", marginRight: 4 }}>↳</span> : null}
+                              {item.ipName}
+                            </td>
+                            <td style={{ padding: "8px", fontSize: "14px" }}>{item.designer}</td>
+                            <td style={{ padding: "8px", fontSize: "14px" }}>
+                              <input
                                 style={{
-                                  background: "#10b981",
-                                  color: "#fff",
-                                  fontSize: "14px",
-                                  padding: "7px 14px",
-                                  border: "none",
-                                  borderRadius: 6,
-                                  fontWeight: 600,
-                                  cursor: "pointer"
+                                  width: "100%",
+                                  fontSize: 14,
+                                  border: "1px solid #d1d5db",
+                                  borderRadius: 4,
+                                  padding: "4px 7px"
                                 }}
-                                disabled={item.layoutClosed}
-                              >
-                                Close
-                              </button>
-                              <button
+                                value={item.layoutOwner || ""}
+                                onChange={(e) => {
+                                  const updated = [...projectsData[item.projectId]];
+                                  const idxInProject = updated.findIndex(row => row.ipName === item.ipName);
+                                  if (idxInProject !== -1) {
+                                    updated[idxInProject].layoutOwner = e.target.value;
+                                    setProjectsData(prev => ({
+                                      ...prev,
+                                      [item.projectId]: updated
+                                    }));
+                                  }
+                                }}
+                              />
+                            </td>
+                            <td style={{ padding: "8px", fontSize: "14px" }}>
+                              <DatePicker
+                                selected={item.schematicFreeze ? new Date(item.schematicFreeze) : null}
+                                onChange={(date) => {
+                                  const updated = [...projectsData[item.projectId]];
+                                  const idxInProject = updated.findIndex(row => row.ipName === item.ipName);
+                                  if (idxInProject !== -1) {
+                                    updated[idxInProject].schematicFreeze = date ? date.toISOString().slice(0, 10) : "";
+                                    // If plannedMandays exists, recalc lvsClean
+                                    if (updated[idxInProject].plannedMandays && updated[idxInProject].schematicFreeze) {
+                                      updated[idxInProject].lvsClean = calculateEndDate(updated[idxInProject].schematicFreeze, parseInt(updated[idxInProject].plannedMandays, 10));
+                                    }
+                                    setProjectsData(prev => ({
+                                      ...prev,
+                                      [item.projectId]: updated
+                                    }));
+                                  }
+                                }}
+                                customInput={
+                                  <input
+                                    style={{
+                                      width: "100%",
+                                      fontSize: 14,
+                                      border: "1px solid #d1d5db",
+                                      borderRadius: 4,
+                                      padding: "4px 7px"
+                                    }}
+                                  />
+                                }
+                                dateFormat="yyyy-MM-dd"
+                              />
+                            </td>
+                            <td style={{ padding: "8px", fontSize: "14px" }}>
+                              <DatePicker
+                                selected={item.lvsClean ? new Date(item.lvsClean) : null}
+                                onChange={(date) => {
+                                  const updated = [...projectsData[item.projectId]];
+                                  const idxInProject = updated.findIndex(row => row.ipName === item.ipName);
+                                  if (idxInProject !== -1) {
+                                    updated[idxInProject].lvsClean = date ? date.toISOString().slice(0, 10) : "";
+                                    // If schematicFreeze exists, recalc plannedMandays
+                                    if (updated[idxInProject].schematicFreeze && updated[idxInProject].lvsClean) {
+                                      const mandaysNum = calculateMandays(updated[idxInProject].schematicFreeze, updated[idxInProject].lvsClean);
+                                      updated[idxInProject].plannedMandays = mandaysNum !== "" ? mandaysNum.toString() : "";
+                                    }
+                                    setProjectsData(prev => ({
+                                      ...prev,
+                                      [item.projectId]: updated
+                                    }));
+                                  }
+                                }}
+                                customInput={
+                                  <input
+                                    style={{
+                                      width: "100%",
+                                      fontSize: 14,
+                                      border: "1px solid #d1d5db",
+                                      borderRadius: 4,
+                                      padding: "4px 7px"
+                                    }}
+                                  />
+                                }
+                                dateFormat="yyyy-MM-dd"
+                              />
+                            </td>
+                            <td style={{ padding: "8px", fontSize: "14px" }}>
+                              <input
                                 style={{
-                                  background: item.layoutClosed ? "#f59e0b" : "#e5e7eb",
-                                  color: item.layoutClosed ? "#fff" : "#9ca3af",
-                                  fontSize: "14px",
-                                  padding: "7px 14px",
-                                  border: "none",
-                                  borderRadius: 6,
-                                  fontWeight: 600,
-                                  cursor: item.layoutClosed ? "pointer" : "not-allowed"
+                                  width: "100%",
+                                  fontSize: 14,
+                                  border: "1px solid #d1d5db",
+                                  borderRadius: 4,
+                                  padding: "4px 7px"
                                 }}
-                                disabled={!item.layoutClosed}
-                                onClick={() => {
-                                  if (!item.layoutClosed) return;
-                                  const updatedProjects = { ...projectsData };
-                                  const updatedEntries = updatedProjects[projectId].map((entry, i) =>
-                                    i === idx
-                                      ? {
-                                          ...entry,
-                                          layoutClosed: false,
-                                          weeklyWeights: [
-                                            ...(entry.weeklyWeights || []),
-                                            {
-                                              week: window._currentISOWeek,
-                                              value: 0,
-                                              updatedAt: new Date().toISOString(),
-                                              reopened: true
-                                            }
-                                          ]
+                                value={item.plannedMandays || ""}
+                                onChange={e => {
+                                  const updated = [...projectsData[item.projectId]];
+                                  const idxInProject = updated.findIndex(row => row.ipName === item.ipName);
+                                  if (idxInProject !== -1) {
+                                    updated[idxInProject].plannedMandays = e.target.value;
+                                    setProjectsData(prev => ({
+                                      ...prev,
+                                      [item.projectId]: updated
+                                    }));
+                                  }
+                                }}
+                                onBlur={e => {
+                                  const updated = [...projectsData[item.projectId]];
+                                  const idxInProject = updated.findIndex(row => row.ipName === item.ipName);
+                                  if (idxInProject !== -1) {
+                                    const start = updated[idxInProject].schematicFreeze;
+                                    const mandays = parseInt(updated[idxInProject].plannedMandays, 10);
+                                    if (start && mandays) {
+                                      updated[idxInProject].lvsClean = calculateEndDate(start, mandays);
+                                      updated[idxInProject].plannedMandays = mandays.toString();
+                                      setProjectsData(prev => ({
+                                        ...prev,
+                                        [item.projectId]: updated
+                                      }));
+                                    }
+                                  }
+                                }}
+                              />
+                            </td>
+                            <td style={{ padding: "8px", fontSize: "14px" }}>
+                              <div style={{ display: "flex", gap: "6px" }}>
+                                <button
+                                  onClick={() => {
+                                    const updatedProjects = { ...projectsData };
+                                    const updated = [...updatedProjects[item.projectId]];
+                                    const idxInProject = updated.findIndex(row => row.ipName === item.ipName);
+                                    if (idxInProject !== -1) {
+                                      updated[idxInProject].layoutClosed = true;
+                                      updatedProjects[item.projectId] = updated;
+                                      setProjectsData(updatedProjects);
+                                    }
+                                  }}
+                                  style={{
+                                    background: "#10b981",
+                                    color: "#fff",
+                                    fontSize: "14px",
+                                    padding: "7px 14px",
+                                    border: "none",
+                                    borderRadius: 6,
+                                    fontWeight: 600,
+                                    cursor: "pointer"
+                                  }}
+                                  disabled={item.layoutClosed}
+                                >
+                                  Close
+                                </button>
+                                <button
+                                  style={{
+                                    background: item.layoutClosed ? "#f59e0b" : "#e5e7eb",
+                                    color: item.layoutClosed ? "#fff" : "#9ca3af",
+                                    fontSize: "14px",
+                                    padding: "7px 14px",
+                                    border: "none",
+                                    borderRadius: 6,
+                                    fontWeight: 600,
+                                    cursor: item.layoutClosed ? "pointer" : "not-allowed"
+                                  }}
+                                  disabled={!item.layoutClosed}
+                                  onClick={() => {
+                                    if (!item.layoutClosed) return;
+                                    const updatedProjects = { ...projectsData };
+                                    const updated = [...updatedProjects[item.projectId]];
+                                    const idxInProject = updated.findIndex(row => row.ipName === item.ipName);
+                                    if (idxInProject !== -1) {
+                                      updated[idxInProject].layoutClosed = false;
+                                      updated[idxInProject].weeklyWeights = [
+                                        ...(updated[idxInProject].weeklyWeights || []),
+                                        {
+                                          week: window._currentISOWeek,
+                                          value: 0,
+                                          updatedAt: new Date().toISOString(),
+                                          reopened: true
                                         }
-                                      : entry
-                                  );
-                                  updatedProjects[projectId] = updatedEntries;
-                                  setProjectsData(updatedProjects);
-                                }}
-                              >
-                                Open
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+                                      ];
+                                      updatedProjects[item.projectId] = updated;
+                                      setProjectsData(updatedProjects);
+                                    }
+                                  }}
+                                >
+                                  Open
+                                </button>
+                                {/* Split Button only for mother IPs */}
+                                {!item._isChild && (
+                                  <button
+                                    style={{
+                                      background: "#fbbf24",
+                                      color: "#fff",
+                                      fontSize: "14px",
+                                      padding: "7px 14px",
+                                      border: "none",
+                                      borderRadius: 6,
+                                      fontWeight: 600,
+                                      cursor: "pointer"
+                                    }}
+                                    onClick={() => {
+                                      window.dispatchEvent(
+                                        new CustomEvent("openSplitIpModal", { detail: { item } })
+                                      );
+                                    }}
+                                  >
+                                    Split
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        </React.Fragment>
                       );
-                    })
-                  )}
-              </tbody>
+                    });
+                  })()}
+                </tbody>
               </table>
             </div>
           </React.Fragment>
