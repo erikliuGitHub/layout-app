@@ -1600,7 +1600,7 @@ export default function App() {
                               {new Date(g.year, g.month, 1).toLocaleString('en-US', { month: 'short', year: 'numeric' })}
                             </th>
                           ));
-                        })()}
+                  })()}
                       </tr>
                       {/* Second row: individual days */}
                       <tr style={{
@@ -1611,97 +1611,107 @@ export default function App() {
                         boxShadow: "0 2px 4px rgba(0,0,0,0.03)"
                       }}>
                         <th style={{ width: 180, background: "#fff", border: "none", padding: 0 }}></th>
-                        {(() => {
-                          // Prepare today's date string for comparison
+                        {dailyWorkloads.map((w, idx) => {
+                          const day = w.date.getDay();
                           const todayStr = new Date().toISOString().slice(0, 10);
-                          return dailyWorkloads.map((w, idx) => {
-                            // Only render if it's a weekday
-                            const day = w.date.getDay();
-                            if (day === 0 || day === 6) return null;
-                            const monthIdx = w.date.getMonth();
-                            const prevMonthIdx = idx > 0 ? dailyWorkloads[idx - 1].date.getMonth() : monthIdx;
-                            const isMonthBoundary = idx > 0 && monthIdx !== prevMonthIdx;
-                            const monthColors = ["#f8fafc", "#e0e7ef"];
-                            const bgColor = monthColors[
-                              (() => {
-                                // Find which group this idx belongs to
-                                let groupIdx = 0, acc = 0;
-                                for (let g of (() => {
-                                  // Recompute monthGroups for this map, skipping weekends
-                                  const mg = [];
-                                  let lastMonth = null, lastYear = null, count = 0, startIdx = 0;
-                                  dailyWorkloads.forEach((w, i) => {
-                                    const m = w.date.getMonth();
-                                    const y = w.date.getFullYear();
-                                    const d = w.date.getDay();
-                                    if (d === 0 || d === 6) return;
-                                    if (lastMonth === null) {
-                                      lastMonth = m;
-                                      lastYear = y;
-                                      count = 1;
-                                      startIdx = i;
-                                    } else if (m === lastMonth && y === lastYear) {
-                                      count++;
-                                    } else {
-                                      mg.push({ month: lastMonth, year: lastYear, count, startIdx });
-                                      lastMonth = m;
-                                      lastYear = y;
-                                      count = 1;
-                                      startIdx = i;
-                                    }
-                                  });
-                                  if (count > 0) mg.push({ month: lastMonth, year: lastYear, count, startIdx });
-                                  return mg;
-                                })()) {
-                                  if (idx >= g.startIdx && idx < g.startIdx + g.count) break;
-                                  groupIdx++;
+                          const isToday = w.dateStr === todayStr;
+                          const isMonday = day === 1;
+                          const bgColor = isToday
+                            ? "#fde68a"
+                            : isMonday
+                              ? "#e0f2fe"
+                              : (idx % 2 === 0 ? "#f8fafc" : "#e2e8f0");
+
+                          const thStyle = {
+                            width: "28px",
+                            minWidth: "28px",
+                            maxWidth: "28px",
+                            textAlign: "center",
+                            fontSize: "12px",
+                            background: bgColor,
+                            color: isToday ? "#78350f" : "#334155",
+                            borderRight: "1px solid #e2e8f0",
+                            padding: 2,
+                            position: "relative"
+                          };
+
+                          if (day === 0 || day === 6) return null;
+
+                          return (
+                            <th key={w.dateStr} style={thStyle} title={w.dateStr}>
+                              {String(w.date.getDate()).padStart(2, '0')}
+                              {isToday && (
+                                <div style={{
+                                  position: "absolute",
+                                  top: "-18px",
+                                  left: "50%",
+                                  transform: "translateX(-50%)",
+                                  fontSize: "11px",
+                                  fontWeight: 600,
+                                  color: "#dc2626"
+                                }}>
+                                  Today
+                                </div>
+                              )}
+                            </th>
+                          );
+                        })}
+                      </tr>
+                      {/* === Daily total manpower row === */}
+                      <tr style={{ background: "#f9fafb" }}>
+                        <th style={{
+                          width: 180,
+                          background: "#fff",
+                          border: "none",
+                          padding: 0,
+                          fontWeight: 600,
+                          fontSize: "13px",
+                          color: "#334155",
+                          textAlign: "right",
+                          paddingRight: "8px"
+                        }}>
+                          Total
+                        </th>
+                        {dailyWorkloads.map((w) => {
+                          const dayStr = w.dateStr;
+                          const isWeekend = w.date.getDay() === 0 || w.date.getDay() === 6;
+                          if (isWeekend) return null;
+                          const peopleCount = (() => {
+                            let total = 0;
+                            Object.values(projectsData).forEach(entries => {
+                              entries.forEach(item => {
+                                if (!item.schematicFreeze || !item.lvsClean || !item.plannedMandays) return;
+                                const start = new Date(item.schematicFreeze);
+                                const end = new Date(item.lvsClean);
+                                if (w.date >= start && w.date <= end) {
+                                  const duration = (end - start) / (1000 * 60 * 60 * 24);
+                                  const dailyEffort = duration > 0 ? parseFloat(item.plannedMandays) / duration : 0;
+                                  total += dailyEffort;
                                 }
-                                return groupIdx % 2;
-                              })()
-                            ];
-                            // Highlight today
-                            const isToday = w.dateStr === todayStr;
-                            // Style override for today
-                            const thStyle = {
-                              width: `28px`,
-                              minWidth: `28px`,
-                              maxWidth: `28px`,
-                              textAlign: "center",
-                              fontSize: "16px",
-                              fontWeight: 600,
-                              color: isToday ? "#1f2937" : "#1e293b",
-                              background: isToday ? "#fcd34d" : bgColor,
-                              borderLeft: isMonthBoundary ? "2px dashed #475569" : "1px dashed #cbd5e1",
-                              borderRight: "none",
-                              padding: 0,
-                              height: 30,
-                              margin: 0,
-                              position: "relative"
-                            };
-                            return (
-                              <th
-                                key={w.dateStr}
-                                style={thStyle}
-                                title={w.dateStr}
-                              >
-                                {String(w.date.getDate()).padStart(2, '0')}
-                                {isToday && (
-                                  <div style={{
-                                    position: "absolute",
-                                    top: "-18px",
-                                    left: "50%",
-                                    transform: "translateX(-50%)",
-                                    fontSize: "11px",
-                                    fontWeight: 600,
-                                    color: "#dc2626"
-                                  }}>
-                                    Today
-                                  </div>
-                                )}
-                              </th>
-                            );
-                          });
-                        })()}
+                              });
+                            });
+                            return total.toFixed(1);
+                          })();
+                          return (
+                            <th
+                              key={dayStr + "-total"}
+                              style={{
+                                width: "28px",
+                                minWidth: "28px",
+                                maxWidth: "28px",
+                                textAlign: "center",
+                                fontSize: "11px",
+                                background: "#f1f5f9",
+                                color: "#0f172a",
+                                borderRight: "1px solid #e2e8f0",
+                                padding: "2px 0"
+                              }}
+                              title={`Total people needed on ${dayStr}`}
+                            >
+                              {peopleCount}
+                            </th>
+                          );
+                        })}
                       </tr>
                     </thead>
                   </table>
