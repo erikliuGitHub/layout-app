@@ -1,0 +1,1740 @@
+import React, { useState, useRef, useEffect } from "react";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
+import './index.css';
+import { calculateMandays, calculateEndDate, getRandomDate } from './utils/dateUtils';
+
+// Define large unique designers and layoutOwners arrays
+const designers = Array.from({ length: 50 }, (_, i) => `Designer_${i + 1}`);
+const layoutOwners = Array.from({ length: 34 }, (_, i) => `Layout_${i + 1}`);
+
+export default function App() {
+  const now = new Date().toLocaleString();
+  const analogIPs = [
+    "ADC_Core", "DAC_Unit", "VCO_Block", "Bandgap_Ref", "OpAmp_Cell",
+    "ChargePump", "TempSensor", "LDO_Regulator", "Comparator", "Filter_Block"
+  ];
+  // Dynamically extract all designers and layout owners from the initial project data
+
+  function generateProjectData(offsetDays = 0, rotateLayout = 0, rotateDesigner = 0) {
+    return Array.from({ length: 50 }, (_, i) => {
+      const mid = Math.floor(i < 25 ? -1 : 1);
+      const today = new Date();
+      const pastStart = new Date();
+      pastStart.setDate(pastStart.getDate() - 30 + offsetDays);
+      const futureEnd = new Date();
+      futureEnd.setDate(futureEnd.getDate() + 30 + offsetDays);
+      const start = getRandomDate(
+        mid < 0 ? pastStart : today,
+        mid < 0 ? today : futureEnd
+      );
+      const mandays = Math.floor(Math.random() * (66 - 5 + 1)) + 5;
+      // Use the large arrays for assignment
+      const lo = layoutOwners[(i + rotateLayout) % layoutOwners.length];
+      const ds = designers[(i + rotateDesigner) % designers.length];
+      return {
+        ipName: `${analogIPs[i % analogIPs.length]}_${i + 1}`,
+        designer: ds,
+        schematicFreeze: start,
+        lvsClean: calculateEndDate(start, mandays),
+        plannedMandays: mandays.toString(),
+        layoutOwner: lo,
+        weeklyWeights: []
+      };
+    });
+  }
+
+  const initialProjectsData = {
+    "PJT-2025-Alpha": generateProjectData(0, 0, 0),
+    "PJT-2025-Beta": generateProjectData(20, 1, 2),
+    "PJT-2025-Gamma": generateProjectData(40, 2, 4)
+  };
+
+  const allDesigners = [...new Set(Object.values(initialProjectsData).flat().map(d => d.designer))].filter(Boolean);
+  const allLayoutOwners = [...new Set(Object.values(initialProjectsData).flat().map(d => d.layoutOwner))].filter(Boolean);
+
+  const [projectsData, setProjectsData] = useState(initialProjectsData);
+  const [currentProjectId, setCurrentProjectId] = useState("PJT-2025-Alpha");
+  const [currentUser, setCurrentUser] = useState("Layout_1");
+  const [showNewProjectAlert, setShowNewProjectAlert] = useState(false);
+  const [currentTab, setCurrentTab] = useState("Designer");
+  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
+  // Layout Leader sort state
+  const [layoutLeaderSortConfig, setLayoutLeaderSortConfig] = useState({ key: null, direction: "asc" });
+  // Layout sort state
+  const [layoutSortConfig, setLayoutSortConfig] = useState({ key: null, direction: "asc" });
+  // Designer and Layout Owner filters
+  const [designerFilter, setDesignerFilter] = useState("");
+  const [layoutOwnerFilter, setLayoutOwnerFilter] = useState("");
+  // Gantt filter hooks (move to top-level hooks section)
+  const [ganttDesignerFilter, setGanttDesignerFilter] = useState("");
+  const [ganttLayoutOwnerFilter, setGanttLayoutOwnerFilter] = useState("");
+  const [ganttProjectFilter, setGanttProjectFilter] = useState("");
+  // Generic sort handler and data sorter for Layout Leader and Layout tabs
+  const handleSortGeneric = (key, config, setConfig) => {
+    const direction = config.key === key && config.direction === "asc" ? "desc" : "asc";
+    setConfig({ key, direction });
+  };
+
+  const sortData = (data, config) => {
+    if (!config.key) return data;
+    return [...data].sort((a, b) => {
+      const valA = a[config.key] || "";
+      const valB = b[config.key] || "";
+      if (config.key === "plannedMandays") {
+        return config.direction === "asc"
+          ? parseFloat(valA) - parseFloat(valB)
+          : parseFloat(valB) - parseFloat(valA);
+      }
+      return config.direction === "asc"
+        ? valA.localeCompare(valB)
+        : valB.localeCompare(valA);
+    });
+  };
+  const data = projectsData[currentProjectId] || [];
+  const fileInputRef = useRef(null);
+  // Sorting logic for Designer table
+  const handleSort = (key) => {
+    let direction = "asc";
+    if (sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const sortedData = React.useMemo(() => {
+    const arr = [...data];
+    if (!sortConfig.key) return arr;
+    return arr.sort((a, b) => {
+      const valA = a[sortConfig.key] || "";
+      const valB = b[sortConfig.key] || "";
+      if (sortConfig.key === "plannedMandays") {
+        return sortConfig.direction === "asc"
+          ? parseFloat(valA || 0) - parseFloat(valB || 0)
+          : parseFloat(valB || 0) - parseFloat(valA || 0);
+      }
+      return sortConfig.direction === "asc"
+        ? valA.localeCompare(valB)
+        : valB.localeCompare(valA);
+    });
+  }, [data, sortConfig]);
+
+  useEffect(() => {
+    const last = data[data.length - 1];
+    if (
+      last &&
+      last.ipName &&
+      last.designer &&
+      last.schematicFreeze &&
+      last.lvsClean &&
+      last.plannedMandays
+    ) {
+      const updatedData = [
+        ...data,
+        {
+          ipName: "",
+          designer: "",
+          schematicFreeze: "",
+          lvsClean: "",
+          plannedMandays: ""
+        }
+      ];
+      setProjectsData(prev => ({
+        ...prev,
+        [currentProjectId]: updatedData
+      }));
+    }
+    // eslint-disable-next-line
+  }, [data, currentProjectId]);
+
+  const handleInputChange = (index, field, value) => {
+    if (!projectsData[currentProjectId]) {
+      setProjectsData(prev => ({
+        ...prev,
+        [currentProjectId]: []
+      }));
+      setShowNewProjectAlert(true);
+      return;
+    }
+    const newData = [...data];
+    newData[index][field] = value;
+    const start = newData[index].schematicFreeze;
+    const end = newData[index].lvsClean;
+    if ((field === "schematicFreeze" && end) || (field === "lvsClean" && start)) {
+      const mandaysNum = calculateMandays(start, end);
+      newData[index].plannedMandays = mandaysNum !== "" ? mandaysNum.toString() : "";
+    }
+    setProjectsData(prev => ({
+      ...prev,
+      [currentProjectId]: newData
+    }));
+  };
+
+  const handleMandaysBlur = (index) => {
+    const newData = [...data];
+    const start = newData[index].schematicFreeze;
+    const mandays = parseInt(newData[index].plannedMandays, 10);
+    if (start && mandays) {
+      newData[index].lvsClean = calculateEndDate(start, mandays);
+      newData[index].plannedMandays = mandays.toString();
+      setProjectsData(prev => ({
+        ...prev,
+        [currentProjectId]: newData
+      }));
+    }
+  };
+
+  const copyRow = (index) => {
+    const newData = [...data];
+    const copied = { ...newData[index] };
+    newData.splice(index + 1, 0, copied);
+    setProjectsData(prev => ({
+      ...prev,
+      [currentProjectId]: newData
+    }));
+  };
+
+  const deleteRow = (index) => {
+    const newData = [...data];
+    newData.splice(index, 1);
+    setProjectsData(prev => ({
+      ...prev,
+      [currentProjectId]: newData
+    }));
+  };
+
+  const exportCSV = () => {
+    const headers = ["projectId", "ipName", "designer", "schematicFreeze", "lvsClean", "plannedMandays"];
+    const rows = data.map((row) => {
+      return [
+        JSON.stringify(currentProjectId),
+        JSON.stringify(row.ipName || ""),
+        JSON.stringify(row.designer || ""),
+        JSON.stringify(row.schematicFreeze || ""),
+        JSON.stringify(row.lvsClean || ""),
+        JSON.stringify(row.plannedMandays || "")
+      ].join(",");
+    });
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${currentProjectId}_plan.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importCSV = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const lines = event.target.result.split("\n");
+      const headers = lines[0].split(",");
+      const newData = lines.slice(1).map((line) => {
+        const values = line.split(",");
+        const obj = {};
+        headers.forEach((h, i) => {
+          obj[h] = values[i]?.replace(/\"/g, "").trim();
+        });
+        return obj;
+      });
+      const projectId = newData[0]?.projectId || currentProjectId;
+      const body = newData.map(({ ipName, designer, schematicFreeze, lvsClean, plannedMandays, layoutOwner }) => ({
+        ipName, designer, schematicFreeze, lvsClean, plannedMandays, layoutOwner
+      }));
+      setProjectsData(prev => ({
+        ...prev,
+        [projectId]: body.filter((row) => row.ipName)
+      }));
+      setCurrentProjectId(projectId);
+    };
+    reader.readAsText(file);
+  };
+
+  useEffect(() => {
+    if (showNewProjectAlert) {
+      const timer = setTimeout(() => setShowNewProjectAlert(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [showNewProjectAlert]);
+
+  // ===== Gantt Chart helpers and data (dailyWorkloads, projectBarInfo, chartWidth) =====
+  const pxPerDay = 12;
+  const dailyWorkloads = (() => {
+    const days = [];
+    const start = new Date();
+    start.setDate(start.getDate() - 30); // 過去30天
+    for (let i = 0; i < 120; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      days.push({ date: d, dateStr: d.toISOString().slice(0, 10) });
+    }
+    return days;
+  })();
+
+  const chartWidth = dailyWorkloads.length * pxPerDay;
+
+  function projectBarInfo(item) {
+    if (!item.schematicFreeze || !item.lvsClean) return { offsetPx: 0, widthPx: 0 };
+    const startDate = new Date(item.schematicFreeze);
+    const endDate = new Date(item.lvsClean);
+    const firstDate = dailyWorkloads[0].date;
+    const offsetDays = Math.max(0, Math.floor((startDate - firstDate) / (1000 * 60 * 60 * 24)));
+    const durationDays = Math.max(1, Math.floor((endDate - startDate) / (1000 * 60 * 60 * 24)));
+    return {
+      offsetPx: offsetDays * pxPerDay,
+      widthPx: durationDays * pxPerDay
+    };
+  }
+
+  // Gantt Filters UI (fixed JSX structure)
+  function renderGanttFiltersUI() {
+    return (
+      <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
+        <div>
+          <label style={{ fontWeight: 600 }}>Filter by Project ID:</label>
+          <select
+            value={ganttProjectFilter}
+            onChange={(e) => setGanttProjectFilter(e.target.value)}
+            style={{ marginLeft: 8, padding: "4px 8px", borderRadius: 4 }}
+          >
+            <option value="">All</option>
+            {Object.keys(projectsData).map(pid => (
+              <option key={pid} value={pid}>{pid}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={{ fontWeight: 600 }}>Filter by Designer:</label>
+          <select
+            value={ganttDesignerFilter}
+            onChange={(e) => setGanttDesignerFilter(e.target.value)}
+            style={{ marginLeft: 8, padding: "4px 8px", borderRadius: 4 }}
+          >
+            <option value="">All</option>
+            {[...new Set(Object.values(projectsData).flat().map(d => d.designer))].filter(Boolean).map(d => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={{ fontWeight: 600 }}>Filter by Layout Owner:</label>
+          <select
+            value={ganttLayoutOwnerFilter}
+            onChange={(e) => setGanttLayoutOwnerFilter(e.target.value)}
+            style={{ marginLeft: 8, padding: "4px 8px", borderRadius: 4 }}
+          >
+            <option value="">All</option>
+            {[...new Set(Object.values(projectsData).flat().map(d => d.layoutOwner))].filter(Boolean).map(d => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+    );
+  } // <- this closes renderGanttFiltersUI correctly
+
+  // === TOP NAV BAR and Tabs ===
+  return (
+    <>
+    <div style={{ fontFamily: "sans-serif", background: "#f7fafc", minHeight: "100vh", fontSize: "16px", padding: "0 12px" }}>
+      <div style={{
+        position: "sticky", top: 0, zIndex: 999,
+        background: "#1f2937", borderBottom: "1px solid #e5e7eb", padding: "10px 0",
+        textAlign: "left", fontWeight: 600, fontSize: "24px", color: "#f9fafb", letterSpacing: "0.05em"
+      }}>
+        Layout Resource Plan System
+      </div>
+      <div style={{ height: 48 }} />
+      <div style={{
+        width: "100%",
+        padding: "8px 12px",
+        margin: 0,
+        boxSizing: "border-box"
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 14, color: "#555", display: "flex", alignItems: "center", gap: 8 }}>
+            Logged in as:
+            <select
+              value={currentUser}
+              onChange={(e) => setCurrentUser(e.target.value)}
+              style={{ fontWeight: 700, color: "#2563eb", border: "1px solid #ccc", borderRadius: 4, padding: "2px 6px" }}
+            >
+              {allLayoutOwners.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ fontSize: 12, color: "#888" }}>
+            Current Time: {now}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
+          <button
+            onClick={() => setCurrentTab("Designer")}
+            style={{
+              fontSize: "14px",
+              padding: "7px 14px",
+              borderRadius: 6,
+              fontWeight: 600,
+              background: currentTab === "Designer" ? "#4f46e5" : "#c7d2fe",
+              color: currentTab === "Designer" ? "#fff" : "#3730a3",
+              border: "none",
+              transition: "transform 0.07s",
+              cursor: "pointer"
+            }}
+            onMouseOver={e => e.currentTarget.style.transform = "scale(1.05)"}
+            onMouseOut={e => e.currentTarget.style.transform = "scale(1)"}
+          >
+            Designer
+          </button>
+          <button
+            onClick={() => setCurrentTab("Layout Leader")}
+            style={{
+              fontSize: "14px",
+              padding: "7px 14px",
+              borderRadius: 6,
+              fontWeight: 600,
+              background: currentTab === "Layout Leader" ? "#0284c7" : "#bae6fd",
+              color: currentTab === "Layout Leader" ? "#fff" : "#0369a1",
+              border: "none",
+              transition: "transform 0.07s",
+              cursor: "pointer"
+            }}
+            onMouseOver={e => e.currentTarget.style.transform = "scale(1.05)"}
+            onMouseOut={e => e.currentTarget.style.transform = "scale(1)"}
+          >
+            Layout Leader
+          </button>
+          <button
+            onClick={() => setCurrentTab("Layout")}
+            style={{
+              fontSize: "14px",
+              padding: "7px 14px",
+              borderRadius: 6,
+              fontWeight: 600,
+              background: currentTab === "Layout" ? "#059669" : "#bbf7d0",
+              color: currentTab === "Layout" ? "#fff" : "#065f46",
+              border: "none",
+              transition: "transform 0.07s",
+              cursor: "pointer"
+            }}
+            onMouseOver={e => e.currentTarget.style.transform = "scale(1.05)"}
+            onMouseOut={e => e.currentTarget.style.transform = "scale(1)"}
+          >
+            Layout
+          </button>
+          <button
+            onClick={() => setCurrentTab("Gantt")}
+            style={{
+              fontSize: "14px",
+              padding: "7px 14px",
+              borderRadius: 6,
+              fontWeight: 600,
+              background: currentTab === "Gantt" ? "#7c3aed" : "#ddd6fe",
+              color: currentTab === "Gantt" ? "#fff" : "#5b21b6",
+              border: "none",
+              transition: "transform 0.07s",
+              cursor: "pointer"
+            }}
+          >
+            Gantt
+          </button>
+        </div>
+
+        {currentTab === "Designer" && (
+          <React.Fragment>
+            {showNewProjectAlert && (
+              <div style={{
+                marginBottom: 16, textAlign: "center",
+                background: "#d1fae5", color: "#065f46", padding: "8px 0",
+                borderRadius: 5, boxShadow: "0 1px 2px rgba(0,0,0,0.03)"
+              }}>
+                New project "{currentProjectId}" created.
+              </div>
+            )}
+            {/* Project ID and Import/Export */}
+            <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 20 }}>
+              <label style={{ fontWeight: 600, color: "#374151" }}>Project ID</label>
+              <select
+                value={currentProjectId}
+                onChange={(e) => setCurrentProjectId(e.target.value)}
+                style={{
+                  fontSize: 14, padding: "5px 8px", borderRadius: 5,
+                  border: "1px solid #d1d5db", marginRight: 12
+                }}
+              >
+                {Object.keys(projectsData).map((pid) => (
+                  <option key={pid} value={pid}>{pid}</option>
+                ))}
+              </select>
+              <input
+                style={{
+                  width: 200, minWidth: 120, border: "1px solid #d1d5db", borderRadius: 5,
+                  padding: "5px 8px", fontSize: 14, color: "#111"
+                }}
+                value={currentProjectId}
+                onChange={(e) => setCurrentProjectId(e.target.value)}
+                onBlur={() => {
+                  if (!projectsData[currentProjectId]) {
+                    setProjectsData(prev => ({
+                      ...prev,
+                      [currentProjectId]: [{
+                        ipName: "",
+                        designer: "",
+                        schematicFreeze: "",
+                        lvsClean: "",
+                        plannedMandays: ""
+                      }]
+                    }));
+                    setShowNewProjectAlert(true);
+                  }
+                }}
+              />
+              <button
+                style={{
+                  fontSize: "14px",
+                  padding: "7px 14px",
+                  borderRadius: 6,
+                  fontWeight: 600,
+                  color: "#fff",
+                  background: "#6366f1",
+                  border: "none",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                  cursor: "pointer"
+                }}
+                onClick={exportCSV}
+              >
+                Export CSV
+              </button>
+              <button
+                style={{
+                  fontSize: "14px",
+                  padding: "7px 14px",
+                  borderRadius: 6,
+                  fontWeight: 600,
+                  color: "#fff",
+                  background: "#0ea5e9",
+                  border: "none",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                  cursor: "pointer"
+                }}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Import CSV
+              </button>
+              <input type="file" accept=".csv" ref={fileInputRef} onChange={importCSV} style={{ display: "none" }} />
+            </div>
+
+            {/* Designer Filter */}
+            <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+              <label style={{ fontWeight: 600 }}>Filter by Designer:</label>
+              <select
+                value={designerFilter}
+                onChange={(e) => setDesignerFilter(e.target.value)}
+                style={{
+                  fontSize: 14, padding: "5px 8px", borderRadius: 5,
+                  border: "1px solid #d1d5db", minWidth: 140
+                }}
+              >
+                <option value="">All</option>
+                {allDesigners.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* === Designer Table (original table styling) === */}
+            <div style={{
+              overflowX: "auto", maxHeight: 500, border: "1px solid #e5e7eb",
+              borderRadius: 8, background: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", padding: 10,
+              position: "relative"
+            }}>
+              <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                <thead>
+                  <tr style={{ background: "#f1f5f9", position: "sticky", top: 0, zIndex: 1 }}>
+                    <th style={{ padding: "10px", textAlign: "left", fontWeight: 600, fontSize: 15, color: "#334155" }}>
+                      <button
+                        type="button"
+                        onClick={() => handleSort("ipName")}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          fontWeight: 600,
+                          fontSize: 15,
+                          color: "#334155",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center"
+                        }}
+                        title="Sort by IP Name"
+                      >
+                        IP Name
+                        {sortConfig.key === "ipName" && (
+                          <span style={{ marginLeft: 4, fontSize: 13 }}>
+                            {sortConfig.direction === "asc" ? "▲" : "▼"}
+                          </span>
+                        )}
+                      </button>
+                    </th>
+                    <th style={{ padding: "10px", textAlign: "left", fontWeight: 600, fontSize: 15, color: "#334155" }}>
+                      <button
+                        type="button"
+                        onClick={() => handleSort("designer")}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          fontWeight: 600,
+                          fontSize: 15,
+                          color: "#334155",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center"
+                        }}
+                        title="Sort by Designer"
+                      >
+                        Designer
+                        {sortConfig.key === "designer" && (
+                          <span style={{ marginLeft: 4, fontSize: 13 }}>
+                            {sortConfig.direction === "asc" ? "▲" : "▼"}
+                          </span>
+                        )}
+                      </button>
+                    </th>
+                    <th style={{ padding: "10px", textAlign: "left", fontWeight: 600, fontSize: 15, color: "#334155" }}>
+                      <button
+                        type="button"
+                        onClick={() => handleSort("schematicFreeze")}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          fontWeight: 600,
+                          fontSize: 15,
+                          color: "#334155",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center"
+                        }}
+                        title="Sort by Schematic Freeze"
+                      >
+                        Schematic Freeze
+                        {sortConfig.key === "schematicFreeze" && (
+                          <span style={{ marginLeft: 4, fontSize: 13 }}>
+                            {sortConfig.direction === "asc" ? "▲" : "▼"}
+                          </span>
+                        )}
+                      </button>
+                    </th>
+                    <th style={{ padding: "10px", textAlign: "left", fontWeight: 600, fontSize: 15, color: "#334155" }}>
+                      <button
+                        type="button"
+                        onClick={() => handleSort("lvsClean")}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          fontWeight: 600,
+                          fontSize: 15,
+                          color: "#334155",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center"
+                        }}
+                        title="Sort by LVS Clean"
+                      >
+                        LVS Clean
+                        {sortConfig.key === "lvsClean" && (
+                          <span style={{ marginLeft: 4, fontSize: 13 }}>
+                            {sortConfig.direction === "asc" ? "▲" : "▼"}
+                          </span>
+                        )}
+                      </button>
+                    </th>
+                    <th style={{ padding: "10px", textAlign: "left", fontWeight: 600, fontSize: 15, color: "#334155" }}>
+                      <button
+                        type="button"
+                        onClick={() => handleSort("plannedMandays")}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          fontWeight: 600,
+                          fontSize: 15,
+                          color: "#334155",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center"
+                        }}
+                        title="Sort by Mandays"
+                      >
+                        Mandays
+                        {sortConfig.key === "plannedMandays" && (
+                          <span style={{ marginLeft: 4, fontSize: 13 }}>
+                            {sortConfig.direction === "asc" ? "▲" : "▼"}
+                          </span>
+                        )}
+                      </button>
+                    </th>
+                    <th style={{ padding: "10px", textAlign: "left", fontWeight: 600, fontSize: 15, color: "#334155", width: "180px" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedData
+                    .filter(item => (!designerFilter || item.designer === designerFilter))
+                    .map((item, index) => {
+                      if (!("layoutClosed" in item)) item.layoutClosed = false;
+                      const isClosed = item.layoutClosed;
+                      const today = new Date().toISOString().slice(0, 10);
+                      const isPast = item.schematicFreeze && item.schematicFreeze < today;
+                      const isLate = item.lvsClean && item.lvsClean < today && !isClosed;
+                      let rowStyle = {};
+                      // Use the same closed style as Layout page:
+                      if (isClosed) rowStyle = { background: "#f3f4f6", color: "#9ca3af" };
+                      else if (isLate) rowStyle = { background: "#fee2e2" };
+                      else if (isPast) rowStyle = { background: "#fef3c7" };
+                      else rowStyle = {};
+                      return (
+                        <tr key={index} style={rowStyle}>
+                          <td style={{ padding: "8px", borderTop: "1px solid #e5e7eb", fontSize: "14px" }}>
+                            <input style={{
+                              width: "100%", fontSize: 14, border: "1px solid #d1d5db", borderRadius: 4,
+                              padding: "4px 7px"
+                            }} value={item.ipName} onChange={(e) => handleInputChange(index, "ipName", e.target.value)} />
+                          </td>
+                          <td style={{ padding: "8px", borderTop: "1px solid #e5e7eb", fontSize: "14px" }}>
+                            <input style={{
+                              width: "100%", fontSize: 14, border: "1px solid #d1d5db", borderRadius: 4,
+                              padding: "4px 7px"
+                            }} value={item.designer} onChange={(e) => handleInputChange(index, "designer", e.target.value)} />
+                          </td>
+                          <td style={{ padding: "8px", borderTop: "1px solid #e5e7eb", fontSize: "14px" }}>
+                            <DatePicker
+                              selected={item.schematicFreeze ? new Date(item.schematicFreeze) : null}
+                              onChange={(date) => handleInputChange(index, "schematicFreeze", date.toISOString().slice(0, 10))}
+                              customInput={<input style={{
+                                width: "100%", fontSize: 14, border: "1px solid #d1d5db", borderRadius: 4,
+                                padding: "4px 7px"
+                              }} />}
+                            />
+                          </td>
+                          <td style={{ padding: "8px", borderTop: "1px solid #e5e7eb", fontSize: "14px" }}>
+                            <DatePicker
+                              selected={item.lvsClean ? new Date(item.lvsClean) : null}
+                              onChange={(date) => handleInputChange(index, "lvsClean", date.toISOString().slice(0, 10))}
+                              customInput={<input style={{
+                                width: "100%", fontSize: 14, border: "1px solid #d1d5db", borderRadius: 4,
+                                padding: "4px 7px"
+                              }} />}
+                            />
+                          </td>
+                          <td style={{ padding: "8px", borderTop: "1px solid #e5e7eb", fontSize: "14px" }}>
+                            <input
+                              style={{
+                                width: "100%", fontSize: 14, border: "1px solid #d1d5db", borderRadius: 4,
+                                padding: "4px 7px"
+                              }}
+                              value={item.plannedMandays}
+                              onChange={(e) => handleInputChange(index, "plannedMandays", e.target.value)}
+                              onBlur={() => handleMandaysBlur(index)}
+                            />
+                          </td>
+                          <td style={{ padding: "8px", borderTop: "1px solid #e5e7eb", fontSize: "14px" }}>
+                            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                              <button
+                                style={{
+                                  fontSize: "14px",
+                                  padding: "7px 14px",
+                                  borderRadius: 6,
+                                  color: "#fff",
+                                  fontWeight: 600,
+                                  background: "#0ea5e9",
+                                  border: "none"
+                                }}
+                                onClick={() => copyRow(index)}
+                              >
+                                Copy
+                              </button>
+                              <button
+                                style={{
+                                  fontSize: "14px",
+                                  padding: "7px 14px",
+                                  borderRadius: 6,
+                                  color: "#fff",
+                                  fontWeight: 600,
+                                  background: "#ef4444",
+                                  border: "none"
+                                }}
+                                onClick={() => deleteRow(index)}
+                              >
+                                Delete
+                              </button>
+                              {/* Close/Open buttons */}
+                              <div style={{ display: "flex", gap: "6px" }}>
+                                <button
+                                  onClick={() => {
+                                    const newData = [...data];
+                                    newData[index].layoutClosed = true;
+                                    setProjectsData(prev => ({
+                                      ...prev,
+                                      [currentProjectId]: newData
+                                    }));
+                                  }}
+                                  style={{
+                                    background: "#10b981",
+                                    color: "#fff",
+                                    fontSize: "14px",
+                                    padding: "7px 14px",
+                                    border: "none",
+                                    borderRadius: 6,
+                                    fontWeight: 600,
+                                    cursor: "pointer"
+                                  }}
+                                  disabled={item.layoutClosed}
+                                >
+                                  Close
+                                </button>
+                                <button
+                                  style={{
+                                    background: item.layoutClosed ? "#f59e0b" : "#e5e7eb",
+                                    color: item.layoutClosed ? "#fff" : "#9ca3af",
+                                    fontSize: "14px",
+                                    padding: "7px 14px",
+                                    border: "none",
+                                    borderRadius: 6,
+                                    fontWeight: 600,
+                                    cursor: item.layoutClosed ? "pointer" : "not-allowed"
+                                  }}
+                                  disabled={!item.layoutClosed}
+                                  onClick={() => {
+                                    if (!item.layoutClosed) return;
+                                    const newData = [...data];
+                                    newData[index].layoutClosed = false;
+                                    setProjectsData(prev => ({
+                                      ...prev,
+                                      [currentProjectId]: newData
+                                    }));
+                                  }}
+                                >
+                                  Open
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </React.Fragment>
+        )}
+        {currentTab === "Layout Leader" && (
+          <React.Fragment>
+            {/* Layout Owner Filter */}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontWeight: 600 }}>Filter by Layout Owner:</label>
+              <select
+                value={layoutOwnerFilter}
+                onChange={(e) => setLayoutOwnerFilter(e.target.value)}
+                style={{
+                  fontSize: 14, padding: "5px 8px", borderRadius: 5,
+                  border: "1px solid #d1d5db", minWidth: 160, marginLeft: 8
+                }}
+              >
+                <option value="">All</option>
+                {allLayoutOwners.map((o) => (
+                  <option key={o} value={o}>{o}</option>
+                ))}
+              </select>
+            </div>
+            <div
+              style={{
+                overflowX: "auto", overflowY: "auto", maxHeight: "500px",
+                background: "#fff", padding: 12, borderRadius: 8,
+                boxShadow: "0 1px 2px rgba(0,0,0,0.05)", border: "1px solid #e5e7eb",
+                position: "relative"
+              }}
+            >
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ position: "sticky", top: 0, zIndex: 1, background: "#f1f5f9" }}>
+                  <th
+                    style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
+                    onClick={() => handleSortGeneric("projectId", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
+                  >
+                    Project
+                    {layoutLeaderSortConfig.key === "projectId" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                  </th>
+                  <th
+                    style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
+                    onClick={() => handleSortGeneric("ipName", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
+                  >
+                    IP Name
+                    {layoutLeaderSortConfig.key === "ipName" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                  </th>
+                  <th
+                    style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
+                    onClick={() => handleSortGeneric("designer", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
+                  >
+                    Designer
+                    {layoutLeaderSortConfig.key === "designer" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                  </th>
+                  <th
+                    style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
+                    onClick={() => handleSortGeneric("layoutOwner", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
+                  >
+                    Layout Owner
+                    {layoutLeaderSortConfig.key === "layoutOwner" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                  </th>
+                  <th
+                    style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
+                    onClick={() => handleSortGeneric("schematicFreeze", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
+                  >
+                    Schematic Freeze
+                    {layoutLeaderSortConfig.key === "schematicFreeze" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                  </th>
+                  <th
+                    style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
+                    onClick={() => handleSortGeneric("lvsClean", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
+                  >
+                    LVS Clean
+                    {layoutLeaderSortConfig.key === "lvsClean" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                  </th>
+                  <th
+                    style={{ padding: "10px", fontWeight: "600", fontSize: 15, cursor: "pointer" }}
+                    onClick={() => handleSortGeneric("plannedMandays", layoutLeaderSortConfig, setLayoutLeaderSortConfig)}
+                  >
+                    Mandays
+                    {layoutLeaderSortConfig.key === "plannedMandays" && (layoutLeaderSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                  </th>
+                  <th
+                    style={{ padding: "10px", fontWeight: "600", fontSize: 15 }}
+                  >
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...Object.entries(projectsData)]
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .flatMap(([projectId, entries]) =>
+                    // Filter by layoutOwnerFilter before mapping
+                    sortData(
+                      entries
+                        .filter(item =>
+                          item.ipName && item.schematicFreeze && item.lvsClean
+                        )
+                        .filter(item =>
+                          (!layoutOwnerFilter || item.layoutOwner === layoutOwnerFilter)
+                        )
+                        .map(item => ({ ...item, projectId })),
+                      layoutLeaderSortConfig
+                    ).map((item, idx) => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      const isPast = item.schematicFreeze && item.schematicFreeze < today;
+                      const isLate = item.lvsClean && item.lvsClean < today && !item.layoutClosed;
+                      let rowStyle = {};
+                      if (item.layoutClosed) rowStyle = { background: "#e5e7eb", color: "#a3a3a3" };
+                      else if (isLate) rowStyle = { background: "#fee2e2" };
+                      else if (isPast) rowStyle = { background: "#fef3c7" };
+                      return (
+                        <tr key={`${projectId}-${idx}`} style={{ borderTop: "1px solid #e5e7eb", ...rowStyle }}>
+                          <td style={{ padding: "8px", fontSize: "14px" }}>{projectId}</td>
+                          <td style={{ padding: "8px", fontSize: "14px" }}>{item.ipName}</td>
+                          <td style={{ padding: "8px", fontSize: "14px" }}>{item.designer}</td>
+                          <td style={{ padding: "8px", fontSize: "14px" }}>
+                            <input
+                              style={{
+                                width: "100%",
+                                fontSize: 14,
+                                border: "1px solid #d1d5db",
+                                borderRadius: 4,
+                                padding: "4px 7px"
+                              }}
+                              value={item.layoutOwner || ""}
+                              onChange={(e) => {
+                                const updated = [...projectsData[projectId]];
+                                updated[idx].layoutOwner = e.target.value;
+                                setProjectsData(prev => ({
+                                  ...prev,
+                                  [projectId]: updated
+                                }));
+                              }}
+                            />
+                          </td>
+                          <td style={{ padding: "8px", fontSize: "14px" }}>
+                            <DatePicker
+                              selected={item.schematicFreeze ? new Date(item.schematicFreeze) : null}
+                              onChange={(date) => {
+                                const updated = [...projectsData[projectId]];
+                                updated[idx].schematicFreeze = date ? date.toISOString().slice(0, 10) : "";
+                                // If plannedMandays exists, recalc lvsClean
+                                if (updated[idx].plannedMandays && updated[idx].schematicFreeze) {
+                                  updated[idx].lvsClean = calculateEndDate(updated[idx].schematicFreeze, parseInt(updated[idx].plannedMandays, 10));
+                                }
+                                setProjectsData(prev => ({
+                                  ...prev,
+                                  [projectId]: updated
+                                }));
+                              }}
+                              customInput={
+                                <input
+                                  style={{
+                                    width: "100%",
+                                    fontSize: 14,
+                                    border: "1px solid #d1d5db",
+                                    borderRadius: 4,
+                                    padding: "4px 7px"
+                                  }}
+                                />
+                              }
+                              dateFormat="yyyy-MM-dd"
+                            />
+                          </td>
+                          <td style={{ padding: "8px", fontSize: "14px" }}>
+                            <DatePicker
+                              selected={item.lvsClean ? new Date(item.lvsClean) : null}
+                              onChange={(date) => {
+                                const updated = [...projectsData[projectId]];
+                                updated[idx].lvsClean = date ? date.toISOString().slice(0, 10) : "";
+                                // If schematicFreeze exists, recalc plannedMandays
+                                if (updated[idx].schematicFreeze && updated[idx].lvsClean) {
+                                  const mandaysNum = calculateMandays(updated[idx].schematicFreeze, updated[idx].lvsClean);
+                                  updated[idx].plannedMandays = mandaysNum !== "" ? mandaysNum.toString() : "";
+                                }
+                                setProjectsData(prev => ({
+                                  ...prev,
+                                  [projectId]: updated
+                                }));
+                              }}
+                              customInput={
+                                <input
+                                  style={{
+                                    width: "100%",
+                                    fontSize: 14,
+                                    border: "1px solid #d1d5db",
+                                    borderRadius: 4,
+                                    padding: "4px 7px"
+                                  }}
+                                />
+                              }
+                              dateFormat="yyyy-MM-dd"
+                            />
+                          </td>
+                          <td style={{ padding: "8px", fontSize: "14px" }}>
+                            <input
+                              style={{
+                                width: "100%",
+                                fontSize: 14,
+                                border: "1px solid #d1d5db",
+                                borderRadius: 4,
+                                padding: "4px 7px"
+                              }}
+                              value={item.plannedMandays || ""}
+                              onChange={e => {
+                                const updated = [...projectsData[projectId]];
+                                updated[idx].plannedMandays = e.target.value;
+                                setProjectsData(prev => ({
+                                  ...prev,
+                                  [projectId]: updated
+                                }));
+                              }}
+                              onBlur={e => {
+                                const updated = [...projectsData[projectId]];
+                                const start = updated[idx].schematicFreeze;
+                                const mandays = parseInt(updated[idx].plannedMandays, 10);
+                                if (start && mandays) {
+                                  updated[idx].lvsClean = calculateEndDate(start, mandays);
+                                  updated[idx].plannedMandays = mandays.toString();
+                                  setProjectsData(prev => ({
+                                    ...prev,
+                                    [projectId]: updated
+                                  }));
+                                }
+                              }}
+                            />
+                          </td>
+                          <td style={{ padding: "8px", fontSize: "14px" }}>
+                            <div style={{ display: "flex", gap: "6px" }}>
+                              <button
+                                onClick={() => {
+                                  const updatedProjects = { ...projectsData };
+                                  const updatedEntries = updatedProjects[projectId].map((entry, i) =>
+                                    i === idx ? { ...entry, layoutClosed: true } : entry
+                                  );
+                                  updatedProjects[projectId] = updatedEntries;
+                                  setProjectsData(updatedProjects);
+                                }}
+                                style={{
+                                  background: "#10b981",
+                                  color: "#fff",
+                                  fontSize: "14px",
+                                  padding: "7px 14px",
+                                  border: "none",
+                                  borderRadius: 6,
+                                  fontWeight: 600,
+                                  cursor: "pointer"
+                                }}
+                                disabled={item.layoutClosed}
+                              >
+                                Close
+                              </button>
+                              <button
+                                style={{
+                                  background: item.layoutClosed ? "#f59e0b" : "#e5e7eb",
+                                  color: item.layoutClosed ? "#fff" : "#9ca3af",
+                                  fontSize: "14px",
+                                  padding: "7px 14px",
+                                  border: "none",
+                                  borderRadius: 6,
+                                  fontWeight: 600,
+                                  cursor: item.layoutClosed ? "pointer" : "not-allowed"
+                                }}
+                                disabled={!item.layoutClosed}
+                                onClick={() => {
+                                  if (!item.layoutClosed) return;
+                                  const updatedProjects = { ...projectsData };
+                                  const updatedEntries = updatedProjects[projectId].map((entry, i) =>
+                                    i === idx
+                                      ? {
+                                          ...entry,
+                                          layoutClosed: false,
+                                          weeklyWeights: [
+                                            ...(entry.weeklyWeights || []),
+                                            {
+                                              week: window._currentISOWeek,
+                                              value: 0,
+                                              updatedAt: new Date().toISOString(),
+                                              reopened: true
+                                            }
+                                          ]
+                                        }
+                                      : entry
+                                  );
+                                  updatedProjects[projectId] = updatedEntries;
+                                  setProjectsData(updatedProjects);
+                                }}
+                              >
+                                Open
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+              </tbody>
+              </table>
+            </div>
+          </React.Fragment>
+        )}
+        {currentTab === "Layout" && (
+          <React.Fragment>
+            {/* Helper for ISO week and currentWeek */}
+            {/* Place these helpers here so they are available in the Layout tab block. */}
+            {(() => {
+              // This IIFE just to avoid lint warnings about unused variables outside JSX
+              // and to allow us to define the helpers in this block.
+              // But the helpers are used in the table rendering below.
+              return null;
+            })()}
+            {/* Define getISOWeek and currentWeek above the table block. */}
+            <div style={{ display: "none" }}>
+              {null}
+            </div>
+            {/* Define helper functions for ISO week */}
+            {(() => {
+              // eslint-disable-next-line
+              const getISOWeek = (date = new Date()) => {
+                const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+                const dayNum = d.getUTCDay() || 7;
+                d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+                const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+                const weekNum = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+                return `${d.getUTCFullYear()}-W${weekNum.toString().padStart(2, '0')}`;
+              };
+              // eslint-disable-next-line
+              const currentWeek = getISOWeek();
+              return null;
+            })()}
+            <div
+              style={{
+                overflowX: "auto", overflowY: "auto", maxHeight: "500px",
+                background: "#fff", padding: 12, borderRadius: 8,
+                boxShadow: "0 1px 2px rgba(0,0,0,0.05)", border: "1px solid #e5e7eb",
+                fontSize: "14px",
+                position: "relative"
+              }}
+            >
+              {/* Define getISOWeek and currentWeek for use in this scope. */}
+              {(() => {
+                // eslint-disable-next-line
+                window._getISOWeek = window._getISOWeek || ((date = new Date()) => {
+                  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+                  const dayNum = d.getUTCDay() || 7;
+                  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+                  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+                  const weekNum = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+                  return `${d.getUTCFullYear()}-W${weekNum.toString().padStart(2, '0')}`;
+                });
+                window._currentISOWeek = window._getISOWeek();
+                return null;
+              })()}
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ position: "sticky", top: 0, zIndex: 1, background: "#f1f5f9" }}>
+                    <th
+                      style={{
+                        padding: "10px",
+                        fontWeight: "600",
+                        fontSize: "15px",
+                        textAlign: "left",
+                        background: "#f1f5f9",
+                        color: "#334155",
+                        borderBottom: "1px solid #e5e7eb"
+                      }}
+                    >
+                      Project
+                    </th>
+                    <th
+                      style={{
+                        padding: "10px",
+                        fontWeight: "600",
+                        fontSize: "15px",
+                        textAlign: "left",
+                        background: "#f1f5f9",
+                        color: "#334155",
+                        borderBottom: "1px solid #e5e7eb"
+                      }}
+                    >
+                      IP Name
+                    </th>
+                    <th
+                      style={{
+                        padding: "10px",
+                        fontWeight: "600",
+                        fontSize: "15px",
+                        textAlign: "left",
+                        background: "#f1f5f9",
+                        color: "#334155",
+                        borderBottom: "1px solid #e5e7eb"
+                      }}
+                    >
+                      Layout Owner
+                    </th>
+                    <th
+                      style={{
+                        padding: "10px",
+                        fontWeight: "600",
+                        fontSize: "15px",
+                        textAlign: "left",
+                        background: "#f1f5f9",
+                        color: "#334155",
+                        borderBottom: "1px solid #e5e7eb"
+                      }}
+                    >
+                      Schematic Freeze
+                    </th>
+                    <th
+                      style={{
+                        padding: "10px",
+                        fontWeight: "600",
+                        fontSize: "15px",
+                        textAlign: "left",
+                        background: "#f1f5f9",
+                        color: "#334155",
+                        borderBottom: "1px solid #e5e7eb"
+                      }}
+                    >
+                      LVS Clean
+                    </th>
+                    <th
+                      style={{
+                        padding: "10px",
+                        fontWeight: "600",
+                        fontSize: "15px",
+                        textAlign: "left",
+                        background: "#f1f5f9",
+                        color: "#334155",
+                        borderBottom: "1px solid #e5e7eb",
+                        cursor: "pointer"
+                      }}
+                      onClick={() => handleSortGeneric("plannedMandays", layoutSortConfig, setLayoutSortConfig)}
+                    >
+                      Mandays
+                      {layoutSortConfig.key === "plannedMandays" && (layoutSortConfig.direction === "asc" ? " ▲" : " ▼")}
+                    </th>
+                    <th
+                      style={{
+                        padding: "10px",
+                        fontWeight: "600",
+                        fontSize: "15px",
+                        textAlign: "left",
+                        background: "#f1f5f9",
+                        color: "#334155",
+                        borderBottom: "1px solid #e5e7eb",
+                        width: "140px"
+                      }}
+                    >
+                      Weekly Weight
+                    </th>
+                    <th
+                      style={{
+                        padding: "10px",
+                        fontWeight: "600",
+                        fontSize: "15px",
+                        textAlign: "left",
+                        background: "#f1f5f9",
+                        color: "#334155",
+                        borderBottom: "1px solid #e5e7eb",
+                        width: "240px"
+                      }}
+                    >
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortData(
+                    Object.entries(projectsData)
+                      .flatMap(([projectId, entries]) =>
+                        entries.map((item) => ({ ...item, projectId }))
+                      )
+                      .filter(item => item.layoutOwner === currentUser),
+                    layoutSortConfig
+                  ).map((item, index) => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      const isPast = item.schematicFreeze && item.schematicFreeze < today;
+                      const isLate = item.lvsClean && item.lvsClean < today && !item.layoutClosed;
+                      let rowStyle = {};
+                      if (item.layoutClosed) rowStyle = { background: "#f3f4f6", color: "#9ca3af" };
+                      else if (isLate) rowStyle = { background: "#fee2e2" };
+                      else if (isPast) rowStyle = { background: "#fef3c7" };
+
+                      // Get ISO week helper and current week
+                      const getISOWeek = window._getISOWeek;
+                      const currentWeek = window._currentISOWeek;
+
+                      return (
+                        <tr
+                          key={index}
+                          style={{
+                            borderTop: "1px solid #e5e7eb",
+                            ...rowStyle,
+                            fontSize: "14px",
+                            boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+                            borderRadius: "4px",
+                            transition: "background 0.2s"
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = "#f9fafb"}
+                          onMouseLeave={e => e.currentTarget.style.background = rowStyle.background || ""}
+                        >
+                          <td style={{ fontSize: "14px", padding: "8px" }}>{item.projectId}</td>
+                          <td style={{ fontSize: "14px", padding: "8px" }}>{item.ipName}</td>
+                          <td style={{ fontSize: "14px", padding: "8px" }}>{item.layoutOwner}</td>
+                          <td style={{ fontSize: "14px", padding: "8px" }}>{item.schematicFreeze}</td>
+                          <td style={{ fontSize: "14px", padding: "8px" }}>{item.lvsClean}</td>
+                          <td style={{ fontSize: "14px", padding: "8px" }}>{item.plannedMandays}</td>
+                          <td style={{ fontSize: "14px", padding: "8px", width: "140px" }}>
+                            <input
+                              type="number"
+                              step="0.1"
+                              placeholder="e.g. 1.0"
+                              style={{
+                                width: "100px",
+                                fontSize: 14,
+                                border: "1px solid #d1d5db",
+                                borderRadius: 4,
+                                padding: "4px 7px"
+                              }}
+                              value={
+                                item.weeklyWeights?.find(w => w.week === currentWeek)?.value || ""
+                              }
+                              onChange={(e) => {
+                                const newWeight = parseFloat(e.target.value);
+                                const updated = projectsData[item.projectId].map((row) => {
+                                  if (row.ipName === item.ipName) {
+                                    const now = new Date().toISOString();
+                                    const week = currentWeek;
+                                    const history = [...(row.weeklyWeights || [])];
+                                    const index = history.findIndex(w => w.week === week);
+                                    if (index >= 0) {
+                                      history[index] = { ...history[index], value: newWeight, updatedAt: now };
+                                    } else {
+                                      history.push({ week, value: newWeight, updatedAt: now });
+                                    }
+                                    return { ...row, weeklyWeights: history };
+                                  }
+                                  return row;
+                                });
+                                setProjectsData(prev => ({
+                                  ...prev,
+                                  [item.projectId]: updated
+                                }));
+                              }}
+                            />
+                          </td>
+                          <td style={{ fontSize: "14px", padding: "8px", width: "240px" }}>
+                            <div style={{ display: "flex", gap: "6px" }}>
+                              <button
+                                onClick={() => {
+                                  const updated = [...projectsData[item.projectId]];
+                                  const target = updated.find(row => row.ipName === item.ipName);
+                                  if (target) target.layoutClosed = true;
+                                  setProjectsData(prev => ({
+                                    ...prev,
+                                    [item.projectId]: updated
+                                  }));
+                                }}
+                                style={{
+                                  background: "#10b981",
+                                  color: "#fff",
+                                  fontSize: "14px",
+                                  padding: "7px 14px",
+                                  border: "none",
+                                  borderRadius: 6,
+                                  fontWeight: 600,
+                                  cursor: "pointer"
+                                }}
+                                disabled={item.layoutClosed}
+                              >
+                                Close
+                              </button>
+                              <button
+                                style={{
+                                  background: item.layoutClosed ? "#f59e0b" : "#e5e7eb",
+                                  color: item.layoutClosed ? "#fff" : "#9ca3af",
+                                  fontSize: "14px",
+                                  padding: "7px 14px",
+                                  border: "none",
+                                  borderRadius: 6,
+                                  fontWeight: 600,
+                                  cursor: item.layoutClosed ? "pointer" : "not-allowed"
+                                }}
+                                disabled={!item.layoutClosed}
+                                onClick={() => {
+                                  if (!item.layoutClosed) return;
+                                  const updated = [...projectsData[item.projectId]];
+                                  const target = updated.find(row => row.ipName === item.ipName);
+                                  if (target) {
+                                    target.layoutClosed = false;
+                                    target.weeklyWeights = [
+                                      ...(target.weeklyWeights || []),
+                                      {
+                                        week: window._currentISOWeek,
+                                        value: 0,
+                                        updatedAt: new Date().toISOString(),
+                                        reopened: true
+                                      }
+                                    ];
+                                  }
+                                  setProjectsData(prev => ({
+                                    ...prev,
+                                    [item.projectId]: updated
+                                  }));
+                                }}
+                              >
+                                Open
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </React.Fragment>
+        )}
+      </div>
+      {currentTab === "Gantt" && (
+        <div>
+          {/* Gantt Filters UI */}
+          {renderGanttFiltersUI()}
+          {/* Gantt Chart and Table */}
+          <div style={{
+            background: "#fff",
+            padding: 12,
+            borderRadius: 8,
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+            border: "1px solid #e5e7eb"
+          }}>
+            <h3 style={{ fontSize: 18, marginBottom: 12 }}>Gantt Chart (Planned Schedule)</h3>
+            {/* Outer scroll container for the Gantt chart */}
+            <div style={{
+              position: "relative",
+              maxHeight: "calc(100vh - 120px)",
+              minHeight: "200px",
+              minWidth: "100%",
+              overflow: "auto",
+              border: "1px solid #e5e7eb",
+              borderRadius: 8
+            }}>
+              <div style={{ minWidth: chartWidth + 280, paddingBottom: 20 }}>
+                {/* Daily axis as table header */}
+                {/* Month and day grouping */}
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ borderCollapse: "collapse", width: "100%", minWidth: chartWidth + 280 }}>
+                    <thead>
+                      {/* First row: months, merged by colSpan */}
+                      <tr style={{
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 10,
+                        background: "#fff",
+                        boxShadow: "0 2px 4px rgba(0,0,0,0.05)"
+                      }}>
+                        <th style={{ width: 180, background: "#fff", border: "none", padding: 0 }}></th>
+                        {(() => {
+                          // Group consecutive days with the same month, excluding weekends from the count
+                          const monthGroups = [];
+                          let lastMonth = null, lastYear = null, count = 0, startIdx = 0;
+                          dailyWorkloads.forEach((w, idx) => {
+                            const m = w.date.getMonth();
+                            const y = w.date.getFullYear();
+                            // Only count if it's a weekday
+                            const day = w.date.getDay();
+                            if (day === 0 || day === 6) return;
+                            if (lastMonth === null) {
+                              lastMonth = m;
+                              lastYear = y;
+                              count = 1;
+                              startIdx = idx;
+                            } else if (m === lastMonth && y === lastYear) {
+                              count++;
+                            } else {
+                              monthGroups.push({ month: lastMonth, year: lastYear, count, startIdx });
+                              lastMonth = m;
+                              lastYear = y;
+                              count = 1;
+                              startIdx = idx;
+                            }
+                          });
+                          if (count > 0) {
+                            monthGroups.push({ month: lastMonth, year: lastYear, count, startIdx });
+                          }
+                          // Alternate background color
+                          const monthColors = ["#f8fafc", "#e0e7ef"];
+                          return monthGroups.map((g, i) => (
+                            <th
+                              key={g.year + "-" + g.month}
+                              colSpan={g.count}
+                              style={{
+                                textAlign: "center",
+                                fontSize: "14px",
+                                color: "#475569",
+                                background: monthColors[i % 2],
+                                borderLeft: i === 0 ? "none" : "2px dashed #475569",
+                                borderRight: "1px solid #cbd5e1",
+                                fontWeight: 600,
+                                padding: 0,
+                                height: 28,
+                                margin: 0
+                              }}
+                            >
+                              {new Date(g.year, g.month, 1).toLocaleString('en-US', { month: 'short', year: 'numeric' })}
+                            </th>
+                          ));
+                        })()}
+                      </tr>
+                      {/* Second row: individual days */}
+                      <tr style={{
+                        position: "sticky",
+                        top: 28,
+                        zIndex: 9,
+                        background: "#fff",
+                        boxShadow: "0 2px 4px rgba(0,0,0,0.03)"
+                      }}>
+                        <th style={{ width: 180, background: "#fff", border: "none", padding: 0 }}></th>
+                        {(() => {
+                          // Prepare today's date string for comparison
+                          const todayStr = new Date().toISOString().slice(0, 10);
+                          return dailyWorkloads.map((w, idx) => {
+                            // Only render if it's a weekday
+                            const day = w.date.getDay();
+                            if (day === 0 || day === 6) return null;
+                            const monthIdx = w.date.getMonth();
+                            const prevMonthIdx = idx > 0 ? dailyWorkloads[idx - 1].date.getMonth() : monthIdx;
+                            const isMonthBoundary = idx > 0 && monthIdx !== prevMonthIdx;
+                            const monthColors = ["#f8fafc", "#e0e7ef"];
+                            const bgColor = monthColors[
+                              (() => {
+                                // Find which group this idx belongs to
+                                let groupIdx = 0, acc = 0;
+                                for (let g of (() => {
+                                  // Recompute monthGroups for this map, skipping weekends
+                                  const mg = [];
+                                  let lastMonth = null, lastYear = null, count = 0, startIdx = 0;
+                                  dailyWorkloads.forEach((w, i) => {
+                                    const m = w.date.getMonth();
+                                    const y = w.date.getFullYear();
+                                    const d = w.date.getDay();
+                                    if (d === 0 || d === 6) return;
+                                    if (lastMonth === null) {
+                                      lastMonth = m;
+                                      lastYear = y;
+                                      count = 1;
+                                      startIdx = i;
+                                    } else if (m === lastMonth && y === lastYear) {
+                                      count++;
+                                    } else {
+                                      mg.push({ month: lastMonth, year: lastYear, count, startIdx });
+                                      lastMonth = m;
+                                      lastYear = y;
+                                      count = 1;
+                                      startIdx = i;
+                                    }
+                                  });
+                                  if (count > 0) mg.push({ month: lastMonth, year: lastYear, count, startIdx });
+                                  return mg;
+                                })()) {
+                                  if (idx >= g.startIdx && idx < g.startIdx + g.count) break;
+                                  groupIdx++;
+                                }
+                                return groupIdx % 2;
+                              })()
+                            ];
+                            // Highlight today
+                            const isToday = w.dateStr === todayStr;
+                            // Style override for today
+                            const thStyle = {
+                              width: `28px`,
+                              minWidth: `28px`,
+                              maxWidth: `28px`,
+                              textAlign: "center",
+                              fontSize: "16px",
+                              fontWeight: 600,
+                              color: isToday ? "#1f2937" : "#1e293b",
+                              background: isToday ? "#fcd34d" : bgColor,
+                              borderLeft: isMonthBoundary ? "2px dashed #475569" : "1px dashed #cbd5e1",
+                              borderRight: "none",
+                              padding: 0,
+                              height: 30,
+                              margin: 0,
+                              position: "relative"
+                            };
+                            return (
+                              <th
+                                key={w.dateStr}
+                                style={thStyle}
+                                title={w.dateStr}
+                              >
+                                {String(w.date.getDate()).padStart(2, '0')}
+                                {isToday && (
+                                  <div style={{
+                                    position: "absolute",
+                                    top: "-18px",
+                                    left: "50%",
+                                    transform: "translateX(-50%)",
+                                    fontSize: "11px",
+                                    fontWeight: 600,
+                                    color: "#dc2626"
+                                  }}>
+                                    Today
+                                  </div>
+                                )}
+                              </th>
+                            );
+                          });
+                        })()}
+                      </tr>
+                    </thead>
+                  </table>
+                </div>
+                {/* Project bars */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {
+                    (() => {
+                      // Compose filtered, valid project entries for Gantt
+                      const bars = Object.entries(projectsData)
+                        .filter(([projectId]) => !ganttProjectFilter || ganttProjectFilter === projectId)
+                        .flatMap(([projectId, entries]) =>
+                          (entries || [])
+                            .filter(item => item && item.ipName && item.schematicFreeze && item.lvsClean)
+                            .filter(item => {
+                              if (ganttDesignerFilter && item.designer !== ganttDesignerFilter) return false;
+                              if (ganttLayoutOwnerFilter && item.layoutOwner !== ganttLayoutOwnerFilter) return false;
+                              const start = new Date(item.schematicFreeze);
+                              const end = new Date(item.lvsClean);
+                              if (isNaN(start) || isNaN(end)) return false;
+                              return true;
+                            })
+                            .map((item, i) => {
+                              const { offsetPx, widthPx } = projectBarInfo(item);
+                              const end = new Date(item.lvsClean);
+                              const today = new Date();
+                              const isLate = end < today && !item.layoutClosed;
+                              const isClosed = item.layoutClosed;
+                              let barColor = isClosed ? "#d1d5db" : isLate ? "#ef4444" : "#10b981";
+                              return (
+                                <div key={projectId + item.ipName} style={{ fontSize: 14, display: "flex", alignItems: "center" }}>
+                                  <div style={{ width: 180, flexShrink: 0, fontWeight: 500, color: "#334155" }}>
+                                    <div style={{ marginBottom: 2 }}>{projectId} / {item.ipName}</div>
+                                    <div style={{ fontWeight: 400, color: "#64748b", fontSize: 13 }}>
+                                      {item.designer && <span>👩‍💻 {item.designer}</span>}
+                                      {item.layoutOwner && <span style={{ marginLeft: 8 }}>🧑‍🎨 {item.layoutOwner}</span>}
+                                    </div>
+                                  </div>
+                                  <div style={{
+                                    position: "relative",
+                                    height: 26,
+                                    width: chartWidth,
+                                    background: "transparent"
+                                  }}>
+                                    <div style={{
+                                      position: "absolute",
+                                      left: offsetPx,
+                                      width: widthPx,
+                                      height: 20,
+                                      background: barColor,
+                                      borderRadius: 6,
+                                      top: 3,
+                                      opacity: isClosed ? 0.6 : 1,
+                                      border: isLate ? "2px solid #b91c1c" : "none",
+                                      boxShadow: isLate ? "0 2px 8px #fbbf24" : "0 1px 2px #0001"
+                                    }} title={`Planned: ${item.schematicFreeze} ~ ${item.lvsClean}`}></div>
+                                    <span style={{
+                                      position: "absolute",
+                                      left: offsetPx - 60,
+                                      top: 0,
+                                      fontSize: 12,
+                                      color: "#64748b"
+                                    }}>
+                                      {item.schematicFreeze}
+                                    </span>
+                                    <span style={{
+                                      position: "absolute",
+                                      left: offsetPx + widthPx + 3,
+                                      top: 0,
+                                      fontSize: 12,
+                                      color: "#64748b"
+                                    }}>
+                                      {item.lvsClean}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })
+                        )
+                        .filter(Boolean);
+                      // Fallback if bars is empty
+                      if (bars.length === 0) {
+                        return <div style={{ padding: 20, color: '#999' }}>No matching data to display.</div>;
+                      }
+                      console.log("Gantt bars:", bars)
+                      return bars;
+                    })()
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+    </>
+  );
+}
