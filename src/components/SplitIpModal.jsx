@@ -1,90 +1,93 @@
+// src/components/SplitIpModal.jsx
+
 import React, { useState, useEffect } from "react";
 
-const SplitIpModal = ({ projectsData, setProjectsData, allLayoutOwners }) => {
-  const [open, setOpen] = useState(false);
-  const [parentItem, setParentItem] = useState(null);
-  const [ipName, setIpName] = useState("");
-  const [layoutOwner, setLayoutOwner] = useState("");
-  const [error, setError] = useState("");
+export default function SplitIpModal({ projectsData, setProjectsData, allLayoutOwners }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [parentIp, setParentIp] = useState(null);
+  const [splitCount, setSplitCount] = useState(2);
 
   useEffect(() => {
     const handler = (e) => {
-      setParentItem(e.detail.item);
-      setIpName("");
-      setLayoutOwner(e.detail.item.layoutOwner || "");
-      setError("");
-      setOpen(true);
+      if (e.detail && e.detail.item) {
+        setParentIp(e.detail.item);
+        setIsOpen(true);
+      }
     };
     window.addEventListener("openSplitIpModal", handler);
     return () => window.removeEventListener("openSplitIpModal", handler);
   }, []);
 
-  if (!open) return null;
+  const handleSplit = () => {
+    if (!parentIp || !projectsData[parentIp.projectId]) return;
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!ipName.trim()) return setError("IP Name required");
-    if (!layoutOwner.trim()) return setError("Layout Owner required");
-    const siblings = projectsData[parentItem.projectId] || [];
-    if (siblings.some(row => row.ipName === ipName)) return setError("Duplicate IP Name in project");
-
-    const newChild = {
-      ...parentItem,
-      ipName,
-      layoutOwner,
-      parentIp: parentItem.ipName,
-      weeklyWeights: [],
-      layoutClosed: false,
-    };
-    delete newChild.projectId;
-    delete newChild._isChild;
-    delete newChild._idx;
-
-    const arr = [...siblings];
-    let insertIdx = arr.findIndex(row => row.ipName === parentItem.ipName);
-    if (insertIdx === -1) insertIdx = arr.length - 1;
-    let after = insertIdx;
-    for (let i = insertIdx + 1; i < arr.length; ++i) {
-      if (arr[i].parentIp === parentItem.ipName) after = i;
-      else break;
+    const newEntries = [];
+    for (let i = 1; i <= splitCount; i++) {
+      newEntries.push({
+        ...parentIp,
+        ipName: `${parentIp.ipName}_part${i}`,
+        parentIp: parentIp.ipName
+      });
     }
-    arr.splice(after + 1, 0, newChild);
-    setProjectsData(prev => ({
-      ...prev,
-      [parentItem.projectId]: arr
-    }));
-    setOpen(false);
+
+    const updated = [...projectsData[parentIp.projectId]];
+    const idx = updated.findIndex(row => row.ipName === parentIp.ipName);
+    if (idx !== -1) {
+      updated.splice(idx + 1, 0, ...newEntries);
+      setProjectsData(prev => ({
+        ...prev,
+        [parentIp.projectId]: updated
+      }));
+    }
+
+    setIsOpen(false);
+    setParentIp(null);
+    setSplitCount(2);
   };
 
+  if (!isOpen || !parentIp) return null;
+
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", background: "rgba(0,0,0,0.16)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#fff", borderRadius: 8, padding: "32px 28px", minWidth: 360, maxWidth: 420 }}>
-        <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 18 }}>
-          Split IP for <span style={{ color: "#0284c7" }}>{parentItem?.ipName}</span>
+    <div style={{
+      position: "fixed",
+      top: 0,
+      left: 0,
+      width: "100vw",
+      height: "100vh",
+      background: "rgba(0,0,0,0.4)",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      zIndex: 9999
+    }}>
+      <div style={{ background: "white", padding: 24, borderRadius: 8, minWidth: 300 }}>
+        <h3 style={{ marginBottom: 16 }}>Split IP: {parentIp.ipName}</h3>
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontWeight: 600 }}>Number of Parts:</label>
+          <input
+            type="number"
+            min={2}
+            max={10}
+            value={splitCount}
+            onChange={e => setSplitCount(Math.max(2, Math.min(10, parseInt(e.target.value))))}
+            style={{ marginLeft: 8, width: 60 }}
+          />
         </div>
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontWeight: 600, display: "block", marginBottom: 6 }}>子 IP Name</label>
-            <input type="text" value={ipName} onChange={e => { setIpName(e.target.value); setError(""); }} style={{ width: "100%", fontSize: 15, border: "1px solid #d1d5db", borderRadius: 4, padding: "6px 8px" }} />
-          </div>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontWeight: 600, display: "block", marginBottom: 6 }}>Layout Owner</label>
-            <select value={layoutOwner} onChange={e => { setLayoutOwner(e.target.value); setError(""); }} style={{ width: "100%", fontSize: 15, border: "1px solid #d1d5db", borderRadius: 4, padding: "6px 8px" }}>
-              <option value="">Select Layout Owner</option>
-              {allLayoutOwners.map(o => (
-                <option key={o} value={o}>{o}</option>
-              ))}
-            </select>
-          </div>
-          {error && <div style={{ color: "#dc2626", marginBottom: 12, fontWeight: 600 }}>{error}</div>}
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <button type="button" style={{ background: "#e5e7eb", padding: "8px 20px", borderRadius: 6 }} onClick={() => setOpen(false)}>Cancel</button>
-            <button type="submit" style={{ background: "#0284c7", color: "#fff", padding: "8px 20px", borderRadius: 6 }}>Add 子 IP</button>
-          </div>
-        </form>
+        <div style={{ display: "flex", gap: 12 }}>
+          <button
+            onClick={handleSplit}
+            style={{ background: "#10b981", color: "white", padding: "6px 12px", borderRadius: 6, border: "none" }}
+          >
+            Confirm
+          </button>
+          <button
+            onClick={() => setIsOpen(false)}
+            style={{ background: "#e5e7eb", color: "#374151", padding: "6px 12px", borderRadius: 6, border: "none" }}
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   );
-};
-
-export default SplitIpModal;
+}

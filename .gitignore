@@ -1,24 +1,65 @@
+**.gitignore**
+
+# Dependencies
+node_modules/
+
+# Production
+build/
+dist/
+
 # Logs
-logs
-*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# Misc
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+.env
+.env.local
+.env.*.local
+
+# VSCode
+.vscode/
+
+# React/Vite
+*.cache/
+
+
+**部署說明 (簡要)**
+
+### 本地開發
+```bash
+npm install
+npm run dev
+```
+
+### 建立正式版
+```bash
+npm run build
+```
+
+### 預覽正式版 (確認 build 成果)
+```bash
+npm run preview
+```
+
+### 推到 GitHub Pages（如使用 Vite + gh-pages）
+安裝 gh-pages：
+```bash
+npm install --save-dev gh-pages
+```
+
+在 `package.json` 加入：
+```json
+"scripts": {
+  "predeploy": "npm run build",
+  "deploy": "gh-pages -d dist"
+}
+```
+
+然後執行：
+```bash
+npm run deploy
+```
+
+> 如果你是部署到公司內部伺服器，請確認 `vite.config.js` 裡的 `base` 路徑與設定對應。

@@ -1,0 +1,200 @@
+import React from "react";
+import { getISOWeek, projectBarInfo } from "../utils/ganttUtils";
+
+export default function GanttChart({
+  projectsData,
+  ganttDesignerFilter,
+  setGanttDesignerFilter,
+  ganttLayoutOwnerFilter,
+  setGanttLayoutOwnerFilter,
+  ganttProjectFilter,
+  setGanttProjectFilter
+}) {
+  const barColor = "#4ade80";
+  const pxPerWeek = 50;
+  const weeklyWorkloads = (() => {
+    const weeks = [];
+    const start = new Date();
+    start.setDate(start.getDate() - (start.getDay() === 0 ? 6 : start.getDay() - 1) - 28);
+    for (let i = 0; i < 20; i++) {
+      const monday = new Date(start);
+      monday.setDate(start.getDate() + i * 7);
+      const iso = getISOWeek(monday);
+      weeks.push({ date: monday, isoWeek: iso });
+    }
+    return weeks;
+  })();
+
+  const chartWidth = weeklyWorkloads.length * pxPerWeek;
+
+  const allItems = Object.entries(projectsData)
+    .flatMap(([projectId, items]) =>
+      items.map((item) => ({ ...item, projectId }))
+    )
+    .filter((item) => {
+      if (!item.schematicFreeze || !item.lvsClean) return false;
+      if (ganttProjectFilter && item.projectId !== ganttProjectFilter) return false;
+      if (ganttDesignerFilter && item.designer !== ganttDesignerFilter) return false;
+      if (ganttLayoutOwnerFilter && item.layoutOwner !== ganttLayoutOwnerFilter) return false;
+      return true;
+    });
+
+  return (
+    <div>
+      <h3>Gantt Chart (Planned Schedule)</h3>
+      <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
+        <label>
+          Project:
+          <select
+            value={ganttProjectFilter}
+            onChange={(e) => setGanttProjectFilter(e.target.value)}
+          >
+            <option value="">All</option>
+            {Object.keys(projectsData).map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Designer:
+          <select
+            value={ganttDesignerFilter}
+            onChange={(e) => setGanttDesignerFilter(e.target.value)}
+          >
+            <option value="">All</option>
+            {[...new Set(allItems.map((i) => i.designer))].map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Layout Owner:
+          <select
+            value={ganttLayoutOwnerFilter}
+            onChange={(e) => setGanttLayoutOwnerFilter(e.target.value)}
+          >
+            <option value="">All</option>
+            {[...new Set(allItems.map((i) => i.layoutOwner))].map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: chartWidth + 200 }}>
+          <thead>
+            <tr>
+              <th style={{ width: 200, minWidth: 200, maxWidth: 200 }}></th>
+              {(() => {
+                const monthGroups = [];
+                let lastMonth = null, lastYear = null, count = 0;
+                weeklyWorkloads.forEach((w, idx) => {
+                  const m = w.date.getMonth();
+                  const y = w.date.getFullYear();
+                  if (lastMonth === null) {
+                    lastMonth = m;
+                    lastYear = y;
+                    count = 1;
+                  } else if (m === lastMonth && y === lastYear) {
+                    count++;
+                  } else {
+                    monthGroups.push({ month: lastMonth, year: lastYear, count });
+                    lastMonth = m;
+                    lastYear = y;
+                    count = 1;
+                  }
+                });
+                if (count > 0) {
+                  monthGroups.push({ month: lastMonth, year: lastYear, count });
+                }
+                return monthGroups.map((g, i) => (
+                  <th
+                    key={g.year + "-" + g.month}
+                    colSpan={g.count}
+                    style={{ textAlign: "center", fontSize: "14px", background: "#f1f5f9" }}
+                  >
+                    {new Date(g.year, g.month, 1).toLocaleString('en-US', { month: 'short', year: 'numeric' })}
+                  </th>
+                ));
+              })()}
+            </tr>
+            <tr>
+              <th style={{ width: 200, minWidth: 200, maxWidth: 200 }}></th>
+              {weeklyWorkloads.map((w, idx) => {
+                const isoWeek = getISOWeek(w.date).split("-")[1]; // Extract week number
+                return (
+                  <th
+                    key={`week-${idx}`}
+                    style={{
+                      width: pxPerWeek,
+                      minWidth: pxPerWeek,
+                      maxWidth: pxPerWeek,
+                      textAlign: "center",
+                      fontSize: "12px",
+                      background: idx % 2 === 0 ? "#f8fafc" : "#e2e8f0",
+                      color: "#1f2937",
+                      height: "24px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxSizing: "border-box"
+                    }}
+                  >
+                    {`W${isoWeek}`}
+                  </th>
+                );
+              })}
+            </tr>
+            <tr>
+              <th style={{ width: 200, minWidth: 200, maxWidth: 200 }}>Total</th>
+              {weeklyWorkloads.map((w, idx) => (
+                <th
+                  key={`total-${idx}`}
+                  style={{ width: pxPerWeek, minWidth: pxPerWeek, maxWidth: pxPerWeek, textAlign: "center", fontSize: "12px", color: "#888" }}
+                >
+                  -
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {allItems.length === 0 && (
+              <tr>
+                <td colSpan={weeklyWorkloads.length + 1} style={{ color: "#888", fontStyle: "italic" }}>
+                  No data matched the filter conditions.
+                </td>
+              </tr>
+            )}
+            {allItems.map((item, i) => {
+              return (
+                <tr key={i}>
+                  <td style={{ width: 200, minWidth: 200, maxWidth: 200 }}>{item.projectId} - {item.ipName}</td>
+                  {weeklyWorkloads.map((_, idx) => (
+                    <td key={idx} style={{ position: "relative", height: 24, width: pxPerWeek, minWidth: pxPerWeek, maxWidth: pxPerWeek }}>
+                      {(() => {
+                        const bar = projectBarInfo(item, weeklyWorkloads, pxPerWeek);
+                        const barStart = Math.floor(bar.offsetPx / pxPerWeek);
+                        const barEnd = Math.ceil((bar.offsetPx + bar.widthPx) / pxPerWeek);
+                        if (idx >= barStart && idx < barEnd) {
+                          return (
+                            <div style={{
+                              backgroundColor: barColor,
+                              height: "100%",
+                              borderRadius: 4,
+                              width: "100%",
+                            }} />
+                          );
+                        }
+                        return null;
+                      })()}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

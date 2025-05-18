@@ -1,12 +1,67 @@
-# React + Vite
+# Layout Resource Plan System
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A web-based management tool for tracking and planning IC layout resource assignments, including schematic and layout milestones, designer ownership, and weekly workload visualization.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### Tabs
 
-## Expanding the ESLint configuration
+* **Designer Tab**: Manage IP-level scheduling per designer
+* **Layout Leader Tab**: Assign layout ownership, split IPs, and view milestones
+* **Layout Tab**: Track weekly workload per layout owner and mark closure status
+* **Gantt Tab**: Visualize timelines of all IPs across weeks in a Gantt chart
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### Functions
+
+* CSV import/export
+* Dynamic Gantt rendering with weekly breakdowns
+* Weekly input of man-day contribution
+* IP duplication and deletion
+* Designer and Layout Owner filtering
+* Reopening closed tasks with audit tracking
+
+---
+
+## File Structure Overview
+
+```
+my-layout-app-fixed/
+├── src/
+│   ├── App.jsx                 # Main application entry with routing and tab switching
+│   ├── index.css              # Global styles
+│   ├── components/
+│   │   ├── DesignerTab.jsx    # Designer tab UI and logic
+│   │   ├── LayoutLeaderTab.jsx# Layout Leader tab: owner assignment & IP split
+│   │   ├── LayoutTab.jsx      # Layout tab: weekly work reporting
+│   │   ├── GanttChart.jsx     # Gantt tab: visual scheduling overview
+│   │   └── SplitIpModal.jsx   # Modal UI for IP splitting feature
+│   ├── utils/
+│   │   ├── dateUtils.js       # Utility functions: date calculation, working days
+│   │   ├── ganttUtils.js      # ISO week helpers, Gantt bar calculations
+│   │   └── csvUtils.js        # CSV import/export parser helpers
+```
+
+## Development
+
+### Setup
+
+```bash
+npm install
+npm run dev
+```
+
+### Tech Stack
+
+* React
+* Vite
+* react-datepicker
+
+---
+
+## Author
+
+Developed by Erik Liu for internal layout resource planning.
+
+## License
+
+MIT (or customize for your internal use)
