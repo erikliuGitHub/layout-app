@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import './index.css';
 import { calculateMandays, calculateEndDate, getRandomDate } from './utils/dateUtils';
-import { getISOWeek, projectBarInfo, dailyWorkloads } from './utils/ganttUtils';
+import { getISOWeek, projectBarInfo, dailyWorkloads } from './utils/GanttUtils';
 import { exportCSV } from './utils/csvUtils';
 import Papa from "papaparse";
 const importCSV = (file, callback) => {
