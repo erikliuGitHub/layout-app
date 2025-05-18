@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import './index.css';
 import { calculateMandays, calculateEndDate, getRandomDate } from './utils/dateUtils';
-import { getISOWeek, projectBarInfo, dailyWorkloads } from './utils/ganttUtils';
+import { getISOWeek, projectBarInfo, dailyWorkloads } from './utils/GanttUtils';
 import { exportCSV } from './utils/csvUtils';
 import Papa from "papaparse";
 const importCSV = (file, callback) => {
@@ -82,7 +82,8 @@ export default function App() {
         lvsClean: calculateEndDate(start, mandays),
         plannedMandays: mandays.toString(),
         layoutOwner: lo,
-        weeklyWeights: []
+        weeklyWeights: [],
+        status: ""
       };
     });
   }
@@ -277,6 +278,9 @@ export default function App() {
             currentUser={currentUser}
             layoutSortConfig={layoutSortConfig}
             setLayoutSortConfig={setLayoutSortConfig}
+            layoutLeaderSortConfig={layoutLeaderSortConfig}
+            setLayoutLeaderSortConfig={setLayoutLeaderSortConfig}
+            projectFilterId={projectFilterId}
           />
         )}
       </div>
