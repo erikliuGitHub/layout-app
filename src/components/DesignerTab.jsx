@@ -632,27 +632,24 @@ export default function DesignerTab({
                 </td>
                 <td
                   style={{
-                    padding: "6px 8px",
                     backgroundColor: rowBackgroundColor,
+                    padding: "6px 0",
+                    boxSizing: "border-box",
+                    textAlign: "center",
                     verticalAlign: "middle",
                     minWidth: "240px",
                     maxWidth: "240px",
-                    fontSize: "13px",
-                    textAlign: "center"
+                    fontSize: "13px"
                   }}
                 >
                   <div
                     style={{
-                      width: "100%",
-                      height: "100%",
                       display: "flex",
-                      flexDirection: "row",
                       justifyContent: "center",
                       alignItems: "center",
-                      gap: "6px",
-                      flexWrap: "nowrap", // prevent line wrapping
-                      backgroundColor: backgroundColor,
-                      padding: "6px 0",
+                      flexWrap: "nowrap",
+                      gap: "4px",
+                      padding: "0 6px",
                       boxSizing: "border-box"
                     }}
                   >

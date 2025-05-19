@@ -125,6 +125,8 @@ export default function App() {
   const [allProjectIds, setAllProjectIds] = useState(Object.keys(initialProjectsData));
 
   // === TOP NAV BAR and Tabs ===
+  // Debugging: preview projectsData for LayoutTab
+  console.log("App - projectsData preview for LayoutTab:", projectsData);
   return (
     <>
     <div style={{ fontFamily: "sans-serif", background: "#f7fafc", minHeight: "100vh", fontSize: "16px", padding: "0 12px" }}>
@@ -272,16 +274,19 @@ export default function App() {
           />
         )}
         {currentTab === "Layout" && (
-          <LayoutTab
-            projectsData={projectsData}
-            setProjectsData={setProjectsData}
-            currentUser={currentUser}
-            layoutSortConfig={layoutSortConfig}
-            setLayoutSortConfig={setLayoutSortConfig}
-            layoutLeaderSortConfig={layoutLeaderSortConfig}
-            setLayoutLeaderSortConfig={setLayoutLeaderSortConfig}
-            projectFilterId={projectFilterId}
-          />
+          <div style={{ overflowX: "auto", width: "100%" }}>
+            <LayoutTab
+              projectsData={projectsData}
+              setProjectsData={setProjectsData}
+              currentUser={currentUser}
+              layoutSortConfig={layoutSortConfig}
+              setLayoutSortConfig={setLayoutSortConfig}
+              layoutLeaderSortConfig={layoutLeaderSortConfig}
+              setLayoutLeaderSortConfig={setLayoutLeaderSortConfig}
+              projectFilterId={projectFilterId}
+              currentProjectId={currentProjectId}
+            />
+          </div>
         )}
       </div>
       {currentTab === "Gantt" && (

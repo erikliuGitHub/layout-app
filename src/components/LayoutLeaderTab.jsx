@@ -2,6 +2,25 @@ import React from "react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 
+const getStatus = (row) => {
+  const now = new Date();
+  if (!row.layoutOwner) return "Unassigned";
+  if (row.closed) return "Completed";
+  if (row.reopened) return "Reopened";
+  if (new Date(row.lvsClean) < now) return "Overdue";
+  if (new Date(row.schematicFreeze) <= now) return "In Progress";
+  return "Assigned";
+};
+
+const getRowStyle = (row) => {
+  if (row.closed) return { backgroundColor: "#e5e7eb" }; // Completed
+  if (row.reopened) return { backgroundColor: "#f3e8ff" }; // Reopened
+  if (!row.layoutOwner) return { backgroundColor: "#fef2f2" }; // Unassigned
+  if (new Date(row.lvsClean) < new Date()) return { backgroundColor: "#fee2e2" }; // Overdue
+  if (new Date(row.schematicFreeze) <= new Date()) return { backgroundColor: "#fef9c3" }; // In Progress
+  return { backgroundColor: "#e0f2fe" }; // Assigned
+};
+
 export default function LayoutLeaderTab({
   projectsData,
   setProjectsData,
@@ -13,24 +32,23 @@ export default function LayoutLeaderTab({
   currentProjectId,
   setCurrentProjectId
 }) {
-  const getStatus = (row) => {
-    const now = new Date();
-    if (!row.layoutOwner) return "Unassigned";
-    if (row.closed) return "Completed";
-    if (row.reopened) return "Reopened";
-    if (new Date(row.lvsClean) < now) return "Overdue";
-    if (new Date(row.schematicFreeze) <= now) return "In Progress";
-    return "Assigned";
-  };
-
-  const getRowStyle = (row) => {
-    if (row.closed) return { backgroundColor: "#e5e7eb" }; // Completed
-    if (row.reopened) return { backgroundColor: "#f3e8ff" }; // Reopened
-    if (!row.layoutOwner) return { backgroundColor: "#fef2f2" }; // Unassigned
-    if (new Date(row.lvsClean) < new Date()) return { backgroundColor: "#fee2e2" }; // Overdue
-    if (new Date(row.schematicFreeze) <= new Date()) return { backgroundColor: "#fef9c3" }; // In Progress
-    return { backgroundColor: "#e0f2fe" }; // Assigned
-  };
+  // Recalculate all statuses when currentProjectId changes
+  React.useEffect(() => {
+    const updatedRows = (projectsData[currentProjectId] || []).map((row) => {
+      const status = getStatus(row);
+      row.status = status;
+      console.log("Recalculating status for row:", row, "Status:", status);
+      console.log("STATUS CHECK", status, row.projectId, row.ipName);
+      return {
+        ...row,
+        status,
+      };
+    });
+    setProjectsData({
+      ...projectsData,
+      [currentProjectId]: updatedRows
+    });
+  }, [currentProjectId]);
 
   // Debug logging for initial state
   console.log("Initial Project Data:", projectsData);
@@ -68,7 +86,7 @@ export default function LayoutLeaderTab({
       }
     }
 
-    // Update the status explicitly
+    // Update the status explicitly using getStatus
     updated[idx].status = getStatus(updated[idx]);
 
     setProjectsData({
@@ -272,7 +290,7 @@ export default function LayoutLeaderTab({
                   </select>
                 </td>
                 <td style={columnStyles.status}>
-                  {getStatus(row)}
+                  {row.status}
                 </td>
                 <td style={columnStyles.actions}>
                   <div style={{ display: "flex", gap: "4px", alignItems: "center", justifyContent: "flex-start" }}>

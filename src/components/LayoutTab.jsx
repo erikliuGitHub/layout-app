@@ -30,7 +30,7 @@ export default function LayoutTab({
     .flatMap(([projectId, items]) =>
       items
         .filter(item => item.layoutOwner === currentUser)
-        .map(item => ({ ...item, projectId, status: item.status || "Unassigned" }))
+        .map(item => ({ ...item, projectId }))
     )
     .sort((a, b) => {
       const valA = a[layoutSortConfig.key] || "";
@@ -40,6 +40,14 @@ export default function LayoutTab({
         : valB.localeCompare(valA);
     })
     .filter(Boolean);
+
+  const calculateStatus = (row) => {
+    if (!row.layoutOwner) return "Unassigned";
+    if (row.layoutOwner && !row.schematicFreeze) return "Waiting for Freeze";
+    if (row.schematicFreeze && new Date(row.lvsClean) > new Date()) return "In Progress";
+    if (row.schematicFreeze && new Date(row.lvsClean) <= new Date()) return "Completed";
+    return "Unassigned";
+  };
 
   const updateItem = (projectId, ipName, field, value) => {
     const updated = [...projectsData[projectId]];
@@ -53,7 +61,14 @@ export default function LayoutTab({
       } else if (field === "plannedMandays" && updated[index].schematicFreeze) {
         updated[index].lvsClean = calculateEndDate(updated[index].schematicFreeze, parseInt(value, 10));
       }
-      setProjectsData(prev => ({ ...prev, [projectId]: updated }));
+      const updatedRow = updated[index];
+      updatedRow.status = calculateStatus(updatedRow);
+      setProjectsData(prev => ({
+        ...prev,
+        [projectId]: prev[projectId].map(row =>
+          row.ipName === ipName ? updatedRow : row
+        )
+      }));
     }
   };
 
@@ -74,20 +89,29 @@ export default function LayoutTab({
                 {layoutSortConfig.key === col && (layoutSortConfig.direction === "asc" ? " ▲" : " ▼")}
               </th>
             ))}
-            <th style={{ padding: "4px 10px", fontWeight: "600", fontSize: 15, textAlign: "center" }}>Weekly Weight</th>
+            <th style={{ padding: "10px", fontWeight: "600", fontSize: 15, textAlign: "center" }}>
+              Status
+            </th>
+            <th style={{ padding: "4px 10px", fontWeight: "600", fontSize: 15, textAlign: "center" }}>
+              Weekly Weight<br />
+              <span style={{ fontSize: "12px", color: "#999" }}>{currentWeek}</span>
+            </th>
           </tr>
         </thead>
         <tbody>
           {sortedData.length > 0 ? (
-            sortedData.map((item, idx) => (
+            sortedData.map((item, idx) => {
+              console.log("STATUS CHECK", item.status, item.projectId, item.ipName);
+              return (
               <tr key={idx} style={{
                 borderTop: "1px solid #e5e7eb",
                 backgroundColor:
-                  item.status?.includes("Unassigned") ? "#fef3c7" :
-                  item.status?.includes("Waiting for Freeze") ? "#e0f2fe" :
-                  item.status?.includes("In Progress") ? "#dcfce7" :
-                  item.status?.includes("Completed") ? "#e0e7ff" :
-                  item.status?.includes("Reopened") ? "#fee2e2" : "#ffffff"
+                  item.status === "Unassigned" ? "#fef3c7" :
+                  item.status === "Waiting for Freeze" ? "#e0f2fe" :
+                  item.status === "In Progress" ? "#dcfce7" :
+                  item.status === "Completed" ? "#e0e7ff" :
+                  item.status === "Reopened" ? "#fee2e2" :
+                  "#ffffff"
               }}>
                 <td style={{ padding: 8, textAlign: "left" }}>{item.projectId}</td>
                 <td style={{ padding: 8, textAlign: "center" }}>
@@ -140,11 +164,26 @@ export default function LayoutTab({
                     style={{ width: "80%", backgroundColor: "#f9fafb", border: "none", padding: "2px 4px", textAlign: "center" }}
                   />
                 </td>
+                <td style={{
+                  padding: 8,
+                  textAlign: "center",
+                  backgroundColor:
+                    item.status === "Unassigned" ? "#fef3c7" :
+                    item.status === "Waiting for Freeze" ? "#e0f2fe" :
+                    item.status === "In Progress" ? "#dcfce7" :
+                    item.status === "Completed" ? "#e0e7ff" :
+                    item.status === "Reopened" ? "#fee2e2" :
+                    "#ffffff"
+                }}>
+                  {item.status || "-"}
+                </td>
                 <td style={{ padding: 8, textAlign: "center" }}>
                   <input
-                    type="text"
-                    step="0.1"
-                    value={item.weeklyWeights?.find(w => w.week === currentWeek)?.value || ""}
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={item.weeklyWeights?.find(w => w.week === currentWeek)?.value || 0}
                     onChange={(e) => {
                       const newWeight = parseFloat(e.target.value);
                       const updated = [...projectsData[item.projectId]];
@@ -159,15 +198,33 @@ export default function LayoutTab({
                         setProjectsData(prev => ({ ...prev, [item.projectId]: updated }));
                       }
                     }}
-                    style={{ width: "80%", padding: "2px 4px", textAlign: "center" }}
+                    style={{ width: "100%" }}
                   />
+                  <div style={{ fontSize: "12px", color: "#444", textAlign: "center" }}>
+                    {((item.weeklyWeights?.find(w => w.week === currentWeek)?.value || 0) * 100).toFixed(0)}%
+                  </div>
                 </td>
               </tr>
-            ))
+              );
+            })
           ) : (
             <tr>
               <td colSpan={6} style={{ textAlign: "center", padding: "16px", color: "#999" }}>
                 No records found.
+              </td>
+            </tr>
+          )}
+          {sortedData.length > 0 && (
+            <tr style={{ background: "#f3f4f6", fontWeight: 600 }}>
+              <td colSpan={6} style={{ textAlign: "right", padding: "10px 8px" }}>Total Weekly Weight:</td>
+              <td style={{ textAlign: "center", padding: "10px 8px" }}>
+                {(
+                  sortedData.reduce((sum, item) => {
+                    const week = currentWeek;
+                    const weight = item.weeklyWeights?.find(w => w.week === week)?.value || 0;
+                    return sum + weight;
+                  }, 0) * 100
+                ).toFixed(0)}%
               </td>
             </tr>
           )}
