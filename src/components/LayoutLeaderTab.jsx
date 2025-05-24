@@ -1,16 +1,7 @@
 import React from "react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-
-const getStatus = (row) => {
-  const now = new Date();
-  if (!row.layoutOwner) return "Unassigned";
-  if (row.closed) return "Completed";
-  if (row.reopened) return "Reopened";
-  if (new Date(row.lvsClean) < now) return "Overdue";
-  if (new Date(row.schematicFreeze) <= now) return "In Progress";
-  return "Assigned";
-};
+import { calculateStatus } from "../utils/statusUtils";
 
 const getRowStyle = (row) => {
   if (row.closed) return { backgroundColor: "#e5e7eb" }; // Completed
@@ -32,23 +23,7 @@ export default function LayoutLeaderTab({
   currentProjectId,
   setCurrentProjectId
 }) {
-  // Recalculate all statuses when currentProjectId changes
-  React.useEffect(() => {
-    const updatedRows = (projectsData[currentProjectId] || []).map((row) => {
-      const status = getStatus(row);
-      row.status = status;
-      console.log("Recalculating status for row:", row, "Status:", status);
-      console.log("STATUS CHECK", status, row.projectId, row.ipName);
-      return {
-        ...row,
-        status,
-      };
-    });
-    setProjectsData({
-      ...projectsData,
-      [currentProjectId]: updatedRows
-    });
-  }, [currentProjectId]);
+  // Removed useEffect that recalculates status on currentProjectId change
 
   // Debug logging for initial state
   console.log("Initial Project Data:", projectsData);
@@ -86,8 +61,8 @@ export default function LayoutLeaderTab({
       }
     }
 
-    // Update the status explicitly using getStatus
-    updated[idx].status = getStatus(updated[idx]);
+    // Update the status explicitly using calculateStatus
+    updated[idx].status = calculateStatus(updated[idx]);
 
     setProjectsData({
       ...projectsData,
@@ -105,6 +80,10 @@ export default function LayoutLeaderTab({
         currentProjectId === row.projectId
       )
     )
+    .map(row => ({
+      ...row,
+      status: calculateStatus(row)
+    }))
     .sort((a, b) => {
       const key = layoutLeaderSortConfig.key;
       if (!key) return 0;
@@ -135,7 +114,7 @@ export default function LayoutLeaderTab({
       closed: false,
       reopened: false
     };
-    newRow.status = getStatus(newRow);
+    newRow.status = calculateStatus(newRow);
 
     const updated = [...projectsData[currentProjectId]];
     updated.splice(idx + 1, 0, newRow);
@@ -149,7 +128,7 @@ export default function LayoutLeaderTab({
     const updated = [...projectsData[currentProjectId]];
     updated[idx].closed = true;
     updated[idx].reopened = false;
-    updated[idx].status = getStatus(updated[idx]);
+    updated[idx].status = calculateStatus(updated[idx]);
     setProjectsData({
       ...projectsData,
       [currentProjectId]: updated
@@ -160,7 +139,7 @@ export default function LayoutLeaderTab({
     const updated = [...projectsData[currentProjectId]];
     updated[idx].closed = false;
     updated[idx].reopened = true;
-    updated[idx].status = getStatus(updated[idx]);
+    updated[idx].status = calculateStatus(updated[idx]);
     setProjectsData({
       ...projectsData,
       [currentProjectId]: updated

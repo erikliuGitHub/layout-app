@@ -3,6 +3,7 @@ import './index.css';
 import { calculateMandays, calculateEndDate, getRandomDate } from './utils/dateUtils';
 import { getISOWeek, projectBarInfo, dailyWorkloads } from './utils/ganttUtils';
 import { exportCSV } from './utils/csvUtils';
+import { calculateStatus } from "./utils/statusUtils";
 import Papa from "papaparse";
 const importCSV = (file, callback) => {
   Papa.parse(file, {
@@ -30,81 +31,11 @@ import LayoutLeaderTab from "./components/LayoutLeaderTab";
 import LayoutTab from "./components/LayoutTab";
 import GanttChart from "./components/GanttChart";
 
-// Define large unique designers and layoutOwners arrays
-const designers = [
-  "Alice Chen", "Ben Lin", "Cindy Wang", "Daniel Wu", "Eva Liu", "Frank Huang",
-  "Grace Lee", "Henry Zhang", "Irene Chou", "Jack Tsai", "Karen Sun", "Leo Ma",
-  "Mia Tang", "Nathan Hsu", "Olivia Yeh", "Peter Kuo", "Queenie Ho", "Ryan Shih",
-  "Sophie Lin", "Tony Cheng", "Una Huang", "Victor Lin", "Wendy Hsieh", "Xander Liu",
-  "Yvonne Lin", "Zach Wang", "Amber Chang", "Brian Su", "Claire Yang", "Derek Pan",
-  "Elise Fan", "Felix Tseng", "Gina Liao", "Howard Liu", "Isabel Wang", "Jason Lee",
-  "Kelly Chen", "Louis Chou", "Maggie Hsu", "Neil Kao", "Opal Lin", "Paul Wu",
-  "Queena Chu", "Rex Lee", "Sandy Chang", "Tommy Lin", "Ursula Ho", "Vincent Kuo",
-  "Willa Su", "Xenia Lin"
-];
-const layoutOwners = [
-  "Alex Wu", "Betty Lin", "Charles Tsai", "Diana Lee", "Ethan Chang", "Fiona Cheng",
-  "George Wu", "Hannah Wang", "Ian Liao", "Jenny Kuo", "Kevin Lin", "Linda Huang",
-  "Michael Chou", "Nina Pan", "Oscar Yang", "Peggy Hsieh", "Quinn Fan", "Rachel Tseng",
-  "Sam Su", "Tina Wang", "Ulysses Chu", "Vera Liu", "Willie Ma", "Xiao Mei",
-  "Yuki Lin", "Zoe Hsu", "Alan Chen", "Bella Liu", "Calvin Ho", "Debbie Sun",
-  "Edward Lo", "Frida Yeh", "Gordon Kwan", "Helen Lin"
-];
 
 export default function App() {
   const now = new Date().toLocaleString();
-  const analogIPs = [
-    "ADC_Core", "DAC_Unit", "VCO_Block", "Bandgap_Ref", "OpAmp_Cell",
-    "ChargePump", "TempSensor", "LDO_Regulator", "Comparator", "Filter_Block"
-  ];
-  // Dynamically extract all designers and layout owners from the initial project data
 
-  function generateProjectData(offsetDays = 0, rotateLayout = 0, rotateDesigner = 0) {
-    return Array.from({ length: 50 }, (_, i) => {
-      const mid = Math.floor(i < 25 ? -1 : 1);
-      const today = new Date();
-      const pastStart = new Date();
-      pastStart.setDate(pastStart.getDate() - 30 + offsetDays);
-      const futureEnd = new Date();
-      futureEnd.setDate(futureEnd.getDate() + 30 + offsetDays);
-      const start = getRandomDate(
-        mid < 0 ? pastStart : today,
-        mid < 0 ? today : futureEnd
-      );
-      const mandays = Math.floor(Math.random() * (66 - 5 + 1)) + 5;
-      // Use the large arrays for assignment
-      const lo = i < 3 ? "" : layoutOwners[(i + rotateLayout) % layoutOwners.length];
-      const ds = designers[(i + rotateDesigner) % designers.length];
-      return {
-        ipName: `${analogIPs[i % analogIPs.length]}_${i + 1}`,
-        designer: ds,
-        schematicFreeze: start,
-        lvsClean: calculateEndDate(start, mandays),
-        plannedMandays: mandays.toString(),
-        layoutOwner: lo,
-        weeklyWeights: [],
-        status: ""
-      };
-    });
-  }
-
-  const rawProjectsData = {
-    "PJT-2025-Alpha": generateProjectData(0, 0, 0),
-    "PJT-2025-Beta": generateProjectData(20, 1, 2),
-    "PJT-2025-Gamma": generateProjectData(40, 2, 4)
-  };
-
-  const initialProjectsData = Object.fromEntries(
-    Object.entries(rawProjectsData).map(([projectId, rows]) => [
-      projectId,
-      rows.map(row => ({ ...row, projectId }))
-    ])
-  );
-
-  const allDesigners = [...new Set(Object.values(initialProjectsData).flat().map(d => d.designer))].filter(Boolean);
-  const allLayoutOwners = [...new Set(Object.values(initialProjectsData).flat().map(d => d.layoutOwner))].filter(Boolean);
-
-  const [projectsData, setProjectsData] = useState(initialProjectsData);
+  const [projectsData, setProjectsData] = useState({});
   const [currentProjectId, setCurrentProjectId] = useState("PJT-2025-Alpha");
   const [currentUser, setCurrentUser] = useState("Designer_1");
   const [showNewProjectAlert, setShowNewProjectAlert] = useState(false);
@@ -122,7 +53,41 @@ export default function App() {
   const data = projectsData[currentProjectId] || [];
 
   const [projectFilterId, setProjectFilterId] = useState("PJT-2025-Alpha");
-  const [allProjectIds, setAllProjectIds] = useState(Object.keys(initialProjectsData));
+  const [allProjectIds, setAllProjectIds] = useState([]);
+
+  const [allDesigners, setAllDesigners] = useState([]);
+  const [allLayoutOwners, setAllLayoutOwners] = useState([]);
+
+useEffect(() => {
+  // Fetch projects data from backend API
+  fetch('/api/layouts')
+    .then(response => response.json())
+    .then(data => {
+      console.log("Fetched grouped data from API:", data);  // 加入 log
+      // Initialize status and plannedMandays for each project and row
+      const dataWithStatus = {};
+      for (const [projectId, rows] of Object.entries(data)) {
+        dataWithStatus[projectId] = rows.map(row => ({
+          ...row,
+          status: calculateStatus(row),
+          plannedMandays:
+            row.schematicFreeze && row.lvsClean
+              ? calculateMandays(row.schematicFreeze, row.lvsClean)
+              : row.plannedMandays || "" // 防止 undefined
+        }));
+      }
+      setProjectsData(dataWithStatus);
+      setAllProjectIds(Object.keys(dataWithStatus));
+      const allRows = Object.values(dataWithStatus).flat();
+      const designersSet = new Set(allRows.map(d => d.designer).filter(Boolean));
+      const layoutOwnersSet = new Set(allRows.map(d => d.layoutOwner).filter(Boolean));
+      setAllDesigners(Array.from(designersSet));
+      setAllLayoutOwners(Array.from(layoutOwnersSet));
+    })
+    .catch(error => {
+      console.error("Failed to fetch projects data:", error);
+    });
+}, []);
 
   // === TOP NAV BAR and Tabs ===
   // Debugging: preview projectsData for LayoutTab

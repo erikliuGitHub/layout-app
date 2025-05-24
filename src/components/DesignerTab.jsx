@@ -2,6 +2,7 @@ import React from "react";
 import Papa from "papaparse";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
+import { calculateStatus } from "../utils/statusUtils";
 
 export default function DesignerTab({
   projectsData,
@@ -23,7 +24,7 @@ export default function DesignerTab({
   userRole,
   allUsers,
 }) {
-  const data = projectsData[currentProjectId] || [];
+  const data = Array.isArray(projectsData?.[currentProjectId]) ? projectsData[currentProjectId] : [];
 
   const handleSort = (key) => {
     let direction = "asc";
@@ -58,9 +59,18 @@ export default function DesignerTab({
     }));
   };
 
+
+  // Always use latest projectsData for sortedData, and recalc status on each render
   const sortedData = React.useMemo(() => {
-    if (!sortConfig.key) return [...data];
-    return [...data].sort((a, b) => {
+    // Always use up-to-date data from projectsData for currentProjectId
+    const dataSource = Array.isArray(projectsData?.[currentProjectId]) ? projectsData[currentProjectId] : [];
+    // Add status field on-the-fly
+    const enriched = dataSource.map(item => ({
+      ...item,
+      status: calculateStatus(item)
+    }));
+    if (!sortConfig.key) return enriched;
+    return enriched.sort((a, b) => {
       const valA = a[sortConfig.key] ?? "";
       const valB = b[sortConfig.key] ?? "";
       if (sortConfig.key === "plannedMandays") {
@@ -72,7 +82,7 @@ export default function DesignerTab({
         ? String(valA).localeCompare(String(valB))
         : String(valB).localeCompare(String(valA));
     });
-  }, [data, sortConfig]);
+  }, [projectsData, currentProjectId, sortConfig]);
 
   const isEditable = (item) => true;
 
@@ -289,10 +299,14 @@ export default function DesignerTab({
                   }
 
                   const cleaned = parsed.map((item) => ({
-                    ipName: typeof item.ipName === "string" ? item.ipName.trim() : "",
+                    ipName: typeof item.ipName === "string" ? item.ipName.trim() : (typeof item.ip_name === "string" ? item.ip_name.trim() : ""),
                     designer: typeof item.designer === "string" ? item.designer.trim() : "",
-                    schematicFreeze: typeof item.schematicFreeze === "string" ? item.schematicFreeze.trim() : "",
-                    lvsClean: typeof item.lvsClean === "string" ? item.lvsClean.trim() : "",
+                    schematicFreeze: typeof item.schematicFreeze === "string"
+                      ? item.schematicFreeze.trim()
+                      : (typeof item.schematic_freeze === "string" ? item.schematic_freeze.trim() : ""),
+                    lvsClean: typeof item.lvsClean === "string"
+                      ? item.lvsClean.trim()
+                      : (typeof item.lvs_clean === "string" ? item.lvs_clean.trim() : ""),
                     plannedMandays: "",
                     layoutClosed: false,
                     lastModified: "",
@@ -343,9 +357,16 @@ export default function DesignerTab({
           {sortedData
             .filter(item => (!designerFilter || item.designer === designerFilter))
             .map((item, index) => {
+              // Ensure camelCase usage for all fields
+              // (Assume all data is already camelCase from backend)
               const today = new Date();
-              const schematicDate = item.schematicFreeze ? new Date(item.schematicFreeze) : null;
-              const lvsDate = item.lvsClean ? new Date(item.lvsClean) : null;
+              // Always use camelCase keys; fallback for legacy keys if present
+              const schematicFreeze = item.schematicFreeze ?? item.schematic_freeze;
+              const lvsClean = item.lvsClean ?? item.lvs_clean;
+              const ipName = item.ipName ?? item.ip_name;
+              const layoutClosed = item.layoutClosed ?? item.layout_closed;
+              const schematicDate = schematicFreeze ? new Date(schematicFreeze) : null;
+              const lvsDate = lvsClean ? new Date(lvsClean) : null;
               let backgroundColor = "#fff";
               if (
                 schematicDate &&
@@ -358,16 +379,11 @@ export default function DesignerTab({
               } else if (lvsDate && lvsDate < today) {
                 backgroundColor = "#fde68a"; // 已超過lvs，黃色
               }
-              // If layoutClosed, override backgroundColor and textDecoration for the row
-              const rowBackgroundColor = item.layoutClosed ? "#d1d5db" : backgroundColor;
-              const rowTextDecoration = item.layoutClosed ? "line-through" : "none";
-
-              // --- Error Checking ---
-              const hasMissingFields = !item.ipName || !item.designer || !item.schematicFreeze || !item.lvsClean;
-              const hasDateError = item.schematicFreeze && item.lvsClean &&
-                new Date(item.lvsClean) < new Date(item.schematicFreeze);
-              // --- End Error Checking ---
-
+              const rowBackgroundColor = layoutClosed ? "#d1d5db" : backgroundColor;
+              const rowTextDecoration = layoutClosed ? "line-through" : "none";
+              const hasMissingFields = !ipName || !item.designer || !schematicFreeze || !lvsClean;
+              const hasDateError = schematicFreeze && lvsClean &&
+                new Date(lvsClean) < new Date(schematicFreeze);
               const calcBusinessDays = (startDate, endDate) => {
                 let count = 0;
                 const cur = new Date(startDate);
@@ -378,371 +394,362 @@ export default function DesignerTab({
                 }
                 return count;
               };
-              const mandays = item.schematicFreeze && item.lvsClean
-                ? calcBusinessDays(new Date(item.schematicFreeze), new Date(item.lvsClean))
+              const mandays = schematicFreeze && lvsClean
+                ? calcBusinessDays(new Date(schematicFreeze), new Date(lvsClean))
                 : "";
-
-              // Button textDecoration: only apply line-through if not "Open" and layoutClosed
               const getButtonTextDecoration = (btnLabel) =>
-                item.layoutClosed && btnLabel !== "Open" ? "line-through" : "none";
-
+                layoutClosed && btnLabel !== "Open" ? "line-through" : "none";
               return (
                 <React.Fragment key={index}>
-                <tr
-                  style={{ backgroundColor: rowBackgroundColor }}
-                >
-                <td
-                  style={{
-                    padding: "6px 8px",
-                    minWidth: "160px",
-                    maxWidth: "160px",
-                    textAlign: "center",
-                    textDecoration: rowTextDecoration,
-                  }}
-                >
-                  <input
-                    list={`ip-options-${index}`}
-                    value={item.ipName}
-                    onChange={(e) => {
-                      const newData = [...data];
-                      newData[index].ipName = e.target.value;
-                      setProjectsData(prev => ({
-                        ...prev,
-                        [currentProjectId]: newData
-                      }));
-                    }}
-                    onBlur={(e) => {
-                      const newData = [...data];
-                      newData[index].ipName = e.target.value;
-                      setProjectsData(prev => ({
-                        ...prev,
-                        [currentProjectId]: newData
-                      }));
-                    }}
-                    style={{
-                      padding: "6px",
-                      width: "100%",
-                      textAlign: "center",
-                      textDecoration: rowTextDecoration,
-                      border: "1px solid",
-                      borderColor: hasMissingFields && !item.ipName ? "red" : "#ccc",
-                      borderRadius: "4px",
-                      backgroundColor: "#fff",
-                      cursor: "text",
-                      transition: "background-color 0.2s ease",
-                    }}
-                    title={hasMissingFields && !item.ipName ? "IP Name is required" : ""}
-                  />
-                  <datalist id={`ip-options-${index}`}>
-                    {[...new Set(data.map(d => d.ipName).filter(Boolean))].map(name => (
-                      <option key={name} value={name} />
-                    ))}
-                  </datalist>
-                </td>
-                <td
-                  style={{
-                    padding: "6px 8px",
-                    minWidth: "160px",
-                    maxWidth: "160px",
-                    textAlign: "center",
-                    textDecoration: rowTextDecoration,
-                  }}
-                >
-                  <input
-                    list={`designer-options-${index}`}
-                    value={item.designer}
-                    onChange={(e) => {
-                      const newData = [...data];
-                      newData[index].designer = e.target.value;
-                      setProjectsData(prev => ({
-                        ...prev,
-                        [currentProjectId]: newData
-                      }));
-                    }}
-                    onBlur={(e) => {
-                      const newData = [...data];
-                      newData[index].designer = e.target.value;
-                      setProjectsData(prev => ({
-                        ...prev,
-                        [currentProjectId]: newData
-                      }));
-                    }}
-                    style={{
-                      padding: "6px",
-                      width: "100%",
-                      textAlign: "center",
-                      textDecoration: rowTextDecoration,
-                      border: "1px solid",
-                      borderColor: hasMissingFields && !item.designer ? "red" : "#ccc",
-                      borderRadius: "4px",
-                      backgroundColor: "#fff",
-                      cursor: "text",
-                      transition: "background-color 0.2s ease",
-                    }}
-                    title={hasMissingFields && !item.designer ? "Designer is required" : ""}
-                  />
-                  <datalist id={`designer-options-${index}`}>
-                    {[...new Set(data.map(d => d.designer).filter(Boolean))].map(name => (
-                      <option key={name} value={name} />
-                    ))}
-                  </datalist>
-                </td>
-                <td
-                  style={{
-                    padding: "6px 8px",
-                    minWidth: "160px",
-                    maxWidth: "160px",
-                    textAlign: "center",
-                  }}
-                >
-                  <div
-                    style={{
-                      padding: "6px",
-                      border: "1px solid",
-                      borderColor: hasMissingFields && !item.schematicFreeze ? "red" : "#ccc",
-                      borderRadius: "4px",
-                      backgroundColor: "#fff",
-                      cursor: "pointer",
-                      transition: "background-color 0.2s ease",
-                      textDecoration: item.layoutClosed ? "line-through" : "none",
-                      width: "100%",
-                      boxSizing: "border-box"
-                    }}
-                    title={hasMissingFields && !item.schematicFreeze ? "Schematic Freeze is required" : ""}
-                  >
-                    <DatePicker
-                      selected={item.schematicFreeze ? new Date(item.schematicFreeze) : null}
-                      onChange={(date) => {
-                        const newData = [...data];
-                        newData[index].schematicFreeze = date.toISOString().split("T")[0];
-
-                        const start = new Date(newData[index].schematicFreeze);
-                        const end = new Date(newData[index].lvsClean);
-                        if (!isNaN(start) && !isNaN(end) && end >= start) {
-                          let days = 0;
-                          const cur = new Date(start);
-                          while (cur <= end) {
-                            const day = cur.getDay();
-                            if (day !== 0 && day !== 6) days++;
-                            cur.setDate(cur.getDate() + 1);
-                          }
-                          newData[index].plannedMandays = days.toString();
+                  <tr style={{ backgroundColor: rowBackgroundColor }}>
+                    <td
+                      style={{
+                        padding: "6px 8px",
+                        minWidth: "160px",
+                        maxWidth: "160px",
+                        textAlign: "center",
+                        textDecoration: rowTextDecoration,
+                      }}
+                    >
+                      <input
+                        list={`ip-options-${index}`}
+                        value={ipName ?? ""}
+                        onChange={(e) => {
+                          const newData = [...data];
+                          newData[index].ipName = e.target.value;
+                          setProjectsData(prev => ({
+                            ...prev,
+                            [currentProjectId]: newData
+                          }));
+                        }}
+                        onBlur={(e) => {
+                          const newData = [...data];
+                          newData[index].ipName = e.target.value;
+                          setProjectsData(prev => ({
+                            ...prev,
+                            [currentProjectId]: newData
+                          }));
+                        }}
+                        style={{
+                          padding: "6px",
+                          width: "100%",
+                          textAlign: "center",
+                          textDecoration: rowTextDecoration,
+                          border: "1px solid",
+                          borderColor: hasMissingFields && !ipName ? "red" : "#ccc",
+                          borderRadius: "4px",
+                          backgroundColor: "#fff",
+                          cursor: "text",
+                          transition: "background-color 0.2s ease",
+                        }}
+                        title={hasMissingFields && !ipName ? "IP Name is required" : ""}
+                      />
+                      <datalist id={`ip-options-${index}`}>
+                        {[...new Set(data.map(d => d.ipName ?? d.ip_name).filter(Boolean))].map(name => (
+                          <option key={name} value={name} />
+                        ))}
+                      </datalist>
+                    </td>
+                    <td
+                      style={{
+                        padding: "6px 8px",
+                        minWidth: "160px",
+                        maxWidth: "160px",
+                        textAlign: "center",
+                        textDecoration: rowTextDecoration,
+                      }}
+                    >
+                      <input
+                        list={`designer-options-${index}`}
+                        value={item.designer ?? ""}
+                        onChange={(e) => {
+                          const newData = [...data];
+                          newData[index].designer = e.target.value;
+                          setProjectsData(prev => ({
+                            ...prev,
+                            [currentProjectId]: newData
+                          }));
+                        }}
+                        onBlur={(e) => {
+                          const newData = [...data];
+                          newData[index].designer = e.target.value;
+                          setProjectsData(prev => ({
+                            ...prev,
+                            [currentProjectId]: newData
+                          }));
+                        }}
+                        style={{
+                          padding: "6px",
+                          width: "100%",
+                          textAlign: "center",
+                          textDecoration: rowTextDecoration,
+                          border: "1px solid",
+                          borderColor: hasMissingFields && !item.designer ? "red" : "#ccc",
+                          borderRadius: "4px",
+                          backgroundColor: "#fff",
+                          cursor: "text",
+                          transition: "background-color 0.2s ease",
+                        }}
+                        title={hasMissingFields && !item.designer ? "Designer is required" : ""}
+                      />
+                      <datalist id={`designer-options-${index}`}>
+                        {[...new Set(data.map(d => d.designer).filter(Boolean))].map(name => (
+                          <option key={name} value={name} />
+                        ))}
+                      </datalist>
+                    </td>
+                    <td
+                      style={{
+                        padding: "6px 8px",
+                        minWidth: "160px",
+                        maxWidth: "160px",
+                        textAlign: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: "6px",
+                          border: "1px solid",
+                          borderColor: hasMissingFields && !item.schematicFreeze ? "red" : "#ccc",
+                          borderRadius: "4px",
+                          backgroundColor: "#fff",
+                          cursor: "pointer",
+                          transition: "background-color 0.2s ease",
+                          textDecoration: item.layoutClosed ? "line-through" : "none",
+                          width: "100%",
+                          boxSizing: "border-box"
+                        }}
+                        title={hasMissingFields && !item.schematicFreeze ? "Schematic Freeze is required" : ""}
+                      >
+                        <DatePicker
+                          selected={schematicFreeze ? new Date(schematicFreeze) : null}
+                          onChange={(date) => {
+                            const newData = [...data];
+                            newData[index].schematicFreeze = date.toISOString().split("T")[0];
+                            const start = new Date(newData[index].schematicFreeze);
+                            const end = new Date(newData[index].lvsClean ?? newData[index].lvs_clean);
+                            if (!isNaN(start) && !isNaN(end) && end >= start) {
+                              let days = 0;
+                              const cur = new Date(start);
+                              while (cur <= end) {
+                                const day = cur.getDay();
+                                if (day !== 0 && day !== 6) days++;
+                                cur.setDate(cur.getDate() + 1);
+                              }
+                              newData[index].plannedMandays = days.toString();
+                            }
+                            setProjectsData(prev => ({
+                              ...prev,
+                              [currentProjectId]: newData
+                            }));
+                          }}
+                          wrapperClassName="date-picker-wrapper"
+                          popperPlacement="bottom"
+                          dateFormat="yyyy-MM-dd"
+                          style={{
+                            width: "100%",
+                            textAlign: "center"
+                          }}
+                          disabled={false}
+                        />
+                      </div>
+                    </td>
+                    <td
+                      style={{
+                        padding: "6px 8px",
+                        minWidth: "160px",
+                        maxWidth: "160px",
+                        textAlign: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          padding: "6px",
+                          border: "1px solid",
+                          borderColor: hasDateError ? "red" : (hasMissingFields && !item.lvsClean ? "red" : "#ccc"),
+                          borderRadius: "4px",
+                          backgroundColor: "#fff",
+                          cursor: "pointer",
+                          transition: "background-color 0.2s ease",
+                          textDecoration: item.layoutClosed ? "line-through" : "none",
+                          width: "100%",
+                          boxSizing: "border-box"
+                        }}
+                        title={
+                          hasDateError
+                            ? "LVS Clean must be later than Schematic Freeze"
+                            : (hasMissingFields && !item.lvsClean ? "LVS Clean is required" : "")
                         }
-
-                        setProjectsData(prev => ({
-                          ...prev,
-                          [currentProjectId]: newData
-                        }));
-                      }}
-                      wrapperClassName="date-picker-wrapper"
-                      popperPlacement="bottom"
-                      dateFormat="yyyy-MM-dd"
+                      >
+                        <DatePicker
+                          selected={lvsClean ? new Date(lvsClean) : null}
+                          onChange={(date) => {
+                            const newData = [...data];
+                            newData[index].lvsClean = date.toISOString().split("T")[0];
+                            const start = new Date(newData[index].schematicFreeze ?? newData[index].schematic_freeze);
+                            const end = new Date(newData[index].lvsClean);
+                            if (!isNaN(start) && !isNaN(end) && end >= start) {
+                              let days = 0;
+                              const cur = new Date(start);
+                              while (cur <= end) {
+                                const day = cur.getDay();
+                                if (day !== 0 && day !== 6) days++;
+                                cur.setDate(cur.getDate() + 1);
+                              }
+                              newData[index].plannedMandays = days.toString();
+                            }
+                            setProjectsData(prev => ({
+                              ...prev,
+                              [currentProjectId]: newData
+                            }));
+                          }}
+                          wrapperClassName="date-picker-wrapper"
+                          popperPlacement="bottom"
+                          dateFormat="yyyy-MM-dd"
+                          style={{
+                            width: "100%",
+                            textAlign: "center"
+                          }}
+                          disabled={false}
+                        />
+                      </div>
+                    </td>
+                    <td
                       style={{
-                        width: "100%",
-                        textAlign: "center"
-                      }}
-                      disabled={false}
-                    />
-                  </div>
-                </td>
-                <td
-                  style={{
-                    padding: "6px 8px",
-                    minWidth: "160px",
-                    maxWidth: "160px",
-                    textAlign: "center",
-                  }}
-                >
-                  <div
-                    style={{
-                      padding: "6px",
-                      border: "1px solid",
-                      borderColor: hasDateError ? "red" : (hasMissingFields && !item.lvsClean ? "red" : "#ccc"),
-                      borderRadius: "4px",
-                      backgroundColor: "#fff",
-                      cursor: "pointer",
-                      transition: "background-color 0.2s ease",
-                      textDecoration: item.layoutClosed ? "line-through" : "none",
-                      width: "100%",
-                      boxSizing: "border-box"
-                    }}
-                    title={
-                      hasDateError
-                        ? "LVS Clean must be later than Schematic Freeze"
-                        : (hasMissingFields && !item.lvsClean ? "LVS Clean is required" : "")
-                    }
-                  >
-                    <DatePicker
-                      selected={item.lvsClean ? new Date(item.lvsClean) : null}
-                      onChange={(date) => {
-                        const newData = [...data];
-                        newData[index].lvsClean = date.toISOString().split("T")[0];
-
-                        const start = new Date(newData[index].schematicFreeze);
-                        const end = new Date(newData[index].lvsClean);
-                        if (!isNaN(start) && !isNaN(end) && end >= start) {
-                          let days = 0;
-                          const cur = new Date(start);
-                          while (cur <= end) {
-                            const day = cur.getDay();
-                            if (day !== 0 && day !== 6) days++;
-                            cur.setDate(cur.getDate() + 1);
-                          }
-                          newData[index].plannedMandays = days.toString();
-                        }
-
-                        setProjectsData(prev => ({
-                          ...prev,
-                          [currentProjectId]: newData
-                        }));
-                      }}
-                      wrapperClassName="date-picker-wrapper"
-                      popperPlacement="bottom"
-                      dateFormat="yyyy-MM-dd"
-                      style={{
-                        width: "100%",
-                        textAlign: "center"
-                      }}
-                      disabled={false}
-                    />
-                  </div>
-                </td>
-                <td
-                  style={{
-                    padding: "6px 8px",
-                    minWidth: "60px",
-                    maxWidth: "60px",
-                    textAlign: "center",
-                    textDecoration: rowTextDecoration,
-                  }}
-                >
-                  <input
-                    value={mandays}
-                    readOnly
-                    style={{
-                      padding: "6px",
-                      width: "100%",
-                      minWidth: "60px",
-                      maxWidth: "60px",
-                      textAlign: "center",
-                      textDecoration: rowTextDecoration,
-                      backgroundColor: rowBackgroundColor
-                    }}
-                  />
-                </td>
-                <td
-                  style={{
-                    backgroundColor: rowBackgroundColor,
-                    padding: "6px 0",
-                    boxSizing: "border-box",
-                    textAlign: "center",
-                    verticalAlign: "middle",
-                    minWidth: "240px",
-                    maxWidth: "240px",
-                    fontSize: "13px"
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "center",
-                      alignItems: "center",
-                      flexWrap: "nowrap",
-                      gap: "4px",
-                      padding: "0 6px",
-                      boxSizing: "border-box"
-                    }}
-                  >
-                    <button
-                      onClick={() => handleCopy(index)}
-                      disabled={false}
-                      style={{
-                        backgroundColor: "#6366f1",
-                        color: "#fff",
-                        padding: "4px 8px",
-                        fontSize: "13px",
-                        borderRadius: 4,
-                        border: "none",
-                        fontWeight: 600,
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-                        textDecoration: getButtonTextDecoration("Copy"),
-                        cursor: "pointer"
+                        padding: "6px 8px",
+                        minWidth: "60px",
+                        maxWidth: "60px",
+                        textAlign: "center",
+                        textDecoration: rowTextDecoration,
                       }}
                     >
-                      Copy
-                    </button>
-                    <button
-                      onClick={() => handleDelete(index)}
-                      disabled={false}
+                      <input
+                        value={mandays}
+                        readOnly
+                        style={{
+                          padding: "6px",
+                          width: "100%",
+                          minWidth: "60px",
+                          maxWidth: "60px",
+                          textAlign: "center",
+                          textDecoration: rowTextDecoration,
+                          backgroundColor: rowBackgroundColor
+                        }}
+                      />
+                    </td>
+                    <td
                       style={{
-                        backgroundColor: "#ef4444",
-                        color: "#fff",
-                        padding: "4px 8px",
-                        fontSize: "13px",
-                        borderRadius: 4,
-                        border: "none",
-                        fontWeight: 600,
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-                        textDecoration: getButtonTextDecoration("Delete"),
-                        cursor: "pointer"
+                        backgroundColor: rowBackgroundColor,
+                        padding: "6px 0",
+                        boxSizing: "border-box",
+                        textAlign: "center",
+                        verticalAlign: "middle",
+                        minWidth: "240px",
+                        maxWidth: "240px",
+                        fontSize: "13px"
                       }}
                     >
-                      Delete
-                    </button>
-                    <button
-                      onClick={() => {
-                        const newData = [...data];
-                        newData[index].layoutClosed = true;
-                        setProjectsData(prev => ({
-                          ...prev,
-                          [currentProjectId]: newData
-                        }));
-                      }}
-                      disabled={item.layoutClosed}
-                      style={{
-                        backgroundColor: "#f97316",
-                        color: "#fff",
-                        padding: "4px 8px",
-                        fontSize: "13px",
-                        borderRadius: 4,
-                        border: "none",
-                        fontWeight: 600,
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-                        cursor: item.layoutClosed ? "not-allowed" : "pointer",
-                        textDecoration: getButtonTextDecoration("Close")
-                      }}
-                    >
-                      Close
-                    </button>
-                    <button
-                      onClick={() => {
-                        const newData = [...data];
-                        newData[index].layoutClosed = false;
-                        setProjectsData(prev => ({
-                          ...prev,
-                          [currentProjectId]: newData
-                        }));
-                      }}
-                      disabled={!item.layoutClosed}
-                      style={{
-                        backgroundColor: item.layoutClosed ? "#3b82f6" : "#d1d5db",
-                        color: "#fff",
-                        padding: "4px 8px",
-                        fontSize: "13px",
-                        borderRadius: 4,
-                        border: "none",
-                        fontWeight: 600,
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-                        cursor: item.layoutClosed ? "pointer" : "not-allowed",
-                        textDecoration: getButtonTextDecoration("Open")
-                      }}
-                    >
-                      Open
-                    </button>
-                  </div>
-                </td>
-                </tr>
-                {/* Version info row removed */}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "center",
+                          alignItems: "center",
+                          flexWrap: "nowrap",
+                          gap: "4px",
+                          padding: "0 6px",
+                          boxSizing: "border-box"
+                        }}
+                      >
+                        <button
+                          onClick={() => handleCopy(index)}
+                          disabled={false}
+                          style={{
+                            backgroundColor: "#6366f1",
+                            color: "#fff",
+                            padding: "4px 8px",
+                            fontSize: "13px",
+                            borderRadius: 4,
+                            border: "none",
+                            fontWeight: 600,
+                            boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                            textDecoration: getButtonTextDecoration("Copy"),
+                            cursor: "pointer"
+                          }}
+                        >
+                          Copy
+                        </button>
+                        <button
+                          onClick={() => handleDelete(index)}
+                          disabled={false}
+                          style={{
+                            backgroundColor: "#ef4444",
+                            color: "#fff",
+                            padding: "4px 8px",
+                            fontSize: "13px",
+                            borderRadius: 4,
+                            border: "none",
+                            fontWeight: 600,
+                            boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                            textDecoration: getButtonTextDecoration("Delete"),
+                            cursor: "pointer"
+                          }}
+                        >
+                          Delete
+                        </button>
+                        <button
+                          onClick={() => {
+                            const newData = [...data];
+                            newData[index].layoutClosed = true;
+                            setProjectsData(prev => ({
+                              ...prev,
+                              [currentProjectId]: newData
+                            }));
+                          }}
+                          disabled={layoutClosed}
+                          style={{
+                            backgroundColor: "#f97316",
+                            color: "#fff",
+                            padding: "4px 8px",
+                            fontSize: "13px",
+                            borderRadius: 4,
+                            border: "none",
+                            fontWeight: 600,
+                            boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                            cursor: item.layoutClosed ? "not-allowed" : "pointer",
+                            textDecoration: getButtonTextDecoration("Close")
+                          }}
+                        >
+                          Close
+                        </button>
+                        <button
+                          onClick={() => {
+                            const newData = [...data];
+                            newData[index].layoutClosed = false;
+                            setProjectsData(prev => ({
+                              ...prev,
+                              [currentProjectId]: newData
+                            }));
+                          }}
+                          disabled={!layoutClosed}
+                          style={{
+                            backgroundColor: layoutClosed ? "#3b82f6" : "#d1d5db",
+                            color: "#fff",
+                            padding: "4px 8px",
+                            fontSize: "13px",
+                            borderRadius: 4,
+                            border: "none",
+                            fontWeight: 600,
+                            boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                            cursor: layoutClosed ? "pointer" : "not-allowed",
+                            textDecoration: getButtonTextDecoration("Open")
+                          }}
+                        >
+                          Open
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {/* Version info row removed */}
                 </React.Fragment>
               );
             })}

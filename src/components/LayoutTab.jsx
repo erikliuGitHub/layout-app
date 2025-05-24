@@ -2,6 +2,7 @@ import React from "react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { calculateEndDate, calculateMandays } from "../utils/dateUtils";
+import { calculateStatus } from "../utils/statusUtils";
 
 export default function LayoutTab({
   projectsData,
@@ -26,11 +27,19 @@ export default function LayoutTab({
     setLayoutSortConfig({ key, direction });
   };
 
+  // Dynamically compute sortedData on each render for up-to-date status, plannedMandays, and sorting
   const sortedData = Object.entries(projectsData)
     .flatMap(([projectId, items]) =>
-      items
+      (items || [])
         .filter(item => item.layoutOwner === currentUser)
-        .map(item => ({ ...item, projectId }))
+        .map(item => {
+          const updatedItem = { ...item, projectId };
+          updatedItem.status = calculateStatus(updatedItem);
+          updatedItem.plannedMandays = updatedItem.schematicFreeze && updatedItem.lvsClean
+            ? calculateMandays(updatedItem.schematicFreeze, updatedItem.lvsClean)
+            : updatedItem.plannedMandays || "";
+          return updatedItem;
+        })
     )
     .sort((a, b) => {
       const valA = a[layoutSortConfig.key] || "";
@@ -40,14 +49,6 @@ export default function LayoutTab({
         : valB.localeCompare(valA);
     })
     .filter(Boolean);
-
-  const calculateStatus = (row) => {
-    if (!row.layoutOwner) return "Unassigned";
-    if (row.layoutOwner && !row.schematicFreeze) return "Waiting for Freeze";
-    if (row.schematicFreeze && new Date(row.lvsClean) > new Date()) return "In Progress";
-    if (row.schematicFreeze && new Date(row.lvsClean) <= new Date()) return "Completed";
-    return "Unassigned";
-  };
 
   const updateItem = (projectId, ipName, field, value) => {
     const updated = [...projectsData[projectId]];
@@ -61,12 +62,12 @@ export default function LayoutTab({
       } else if (field === "plannedMandays" && updated[index].schematicFreeze) {
         updated[index].lvsClean = calculateEndDate(updated[index].schematicFreeze, parseInt(value, 10));
       }
-      const updatedRow = updated[index];
-      updatedRow.status = calculateStatus(updatedRow);
+      // Always update status after change
+      updated[index].status = calculateStatus(updated[index]);
       setProjectsData(prev => ({
         ...prev,
         [projectId]: prev[projectId].map(row =>
-          row.ipName === ipName ? updatedRow : row
+          row.ipName === ipName ? updated[index] : row
         )
       }));
     }
@@ -182,7 +183,7 @@ export default function LayoutTab({
                     type="range"
                     min="0"
                     max="1"
-                    step="0.05"
+                    step="0.1"
                     value={item.weeklyWeights?.find(w => w.week === currentWeek)?.value || 0}
                     onChange={(e) => {
                       const newWeight = parseFloat(e.target.value);
