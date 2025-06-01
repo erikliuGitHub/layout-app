@@ -16,17 +16,6 @@ if (typeof window !== 'undefined' && !document.getElementById('gantt-bar-anim-st
       to { opacity: 1; transform: scaleX(1); }
     }
 
-    .timeline-current-time {
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      width: 2px;
-      background: #ef4444;
-      box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
-      z-index: 30;
-      pointer-events: none;
-    }
-
     .timeline-cell {
       position: relative;
       transition: all 0.2s ease;
@@ -90,6 +79,195 @@ if (typeof window !== 'undefined' && !document.getElementById('gantt-bar-anim-st
       font-weight: 500;
       color: #1e293b;
     }
+
+    .custom-tooltip {
+      position: fixed;
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 13px;
+      color: #1e293b;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      z-index: 9999;
+      pointer-events: none;
+      white-space: nowrap;
+      max-width: 320px;
+      transform: translate(10px, 10px);
+      backdrop-filter: blur(4px);
+      background-color: rgba(255, 255, 255, 0.98);
+    }
+
+    .custom-tooltip .tooltip-header {
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+
+    .custom-tooltip .tooltip-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #0f766e;
+      margin-bottom: 4px;
+    }
+
+    .custom-tooltip .tooltip-subtitle {
+      font-size: 12px;
+      color: #0369a1;
+      font-weight: 500;
+    }
+
+    .custom-tooltip .tooltip-section {
+      margin-bottom: 8px;
+    }
+
+    .custom-tooltip .tooltip-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .custom-tooltip .tooltip-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+
+    .custom-tooltip .tooltip-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .custom-tooltip .tooltip-label {
+      color: #64748b;
+      font-weight: 500;
+      margin-right: 8px;
+      min-width: 80px;
+    }
+
+    .custom-tooltip .tooltip-value {
+      color: #1e293b;
+      font-weight: 500;
+    }
+
+    .custom-tooltip .tooltip-status {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .custom-tooltip .tooltip-status.completed {
+      background-color: #dcfce7;
+      color: #166534;
+    }
+
+    .custom-tooltip .tooltip-status.in-progress {
+      background-color: #fef3c7;
+      color: #92400e;
+    }
+
+    .custom-tooltip .tooltip-status.not-started {
+      background-color: #f1f5f9;
+      color: #475569;
+    }
+
+    .custom-tooltip .tooltip-status.cancel {
+      background-color: #fee2e2;
+      color: #991b1b;
+    }
+
+    .custom-tooltip .tooltip-status.review {
+      background-color: #ede9fe;
+      color: #6d28d9;
+    }
+
+    .custom-tooltip .tooltip-weight {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background-color: #fce7f3;
+      color: #be185d;
+      font-weight: 600;
+    }
+
+    .custom-tooltip .tooltip-date {
+      color: #0f766e;
+      font-weight: 500;
+    }
+
+    .custom-tooltip .tooltip-note {
+      color: #dc2626;
+      font-style: italic;
+      font-size: 11px;
+      padding: 4px 8px;
+      background-color: #fee2e2;
+      border-radius: 4px;
+      margin-top: 4px;
+    }
+
+    .custom-tooltip::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: -5px;
+      transform: translateY(-50%);
+      border-width: 5px 5px 5px 0;
+      border-style: solid;
+      border-color: transparent #e2e8f0 transparent transparent;
+    }
+
+    .custom-tooltip::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: -4px;
+      transform: translateY(-50%);
+      border-width: 5px 5px 5px 0;
+      border-style: solid;
+      border-color: transparent white transparent transparent;
+    }
+
+    .custom-tooltip.right {
+      transform: translate(-10px, 10px);
+    }
+
+    .custom-tooltip.right::before {
+      left: auto;
+      right: -5px;
+      border-width: 5px 0 5px 5px;
+      border-color: transparent transparent transparent #e2e8f0;
+    }
+
+    .custom-tooltip.right::after {
+      left: auto;
+      right: -4px;
+      border-width: 5px 0 5px 5px;
+      border-color: transparent transparent transparent white;
+    }
+
+    .custom-tooltip.top {
+      transform: translate(10px, -10px);
+    }
+
+    .custom-tooltip.top::before {
+      top: auto;
+      bottom: -5px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-width: 5px 5px 0 5px;
+      border-color: #e2e8f0 transparent transparent transparent;
+    }
+
+    .custom-tooltip.top::after {
+      top: auto;
+      bottom: -4px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-width: 5px 5px 0 5px;
+      border-color: white transparent transparent transparent;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -129,7 +307,7 @@ const STATUS_COLORS = {
 // 計算 Layout 比重的顏色深淺
 const getLayoutWeightColor = (weight) => {
   if (!weight) return "#f472b6"; // 預設顏色
-  const opacity = Math.min(0.3 + (weight / 100) * 0.7, 1); // 根據比重計算透明度
+  const opacity = weight / 100; // weight 現在是百分比值，所以直接除以 100
   return `rgba(244, 114, 182, ${opacity})`; // 使用 rgba 來控制透明度
 };
 
@@ -231,8 +409,14 @@ export default function GanttChart({
     if (viewMode === 'week') d.setDate(d.getDate() - 28);
     return d;
   });
-  const [currentTimePosition, setCurrentTimePosition] = useState(0);
   const [showTotals, setShowTotals] = useState(true); // 新增 totals 顯示開關
+  const [tooltip, setTooltip] = useState({
+    show: false,
+    content: '',
+    x: 0,
+    y: 0,
+    position: 'left'
+  });
 
   // 添加數據更新監聽
   useEffect(() => {
@@ -255,21 +439,6 @@ export default function GanttChart({
     if (viewMode === 'week') d.setDate(d.getDate() - 28);
     setTimeStartDate(d);
   }, [viewMode]);
-
-  // 更新當前時間位置
-  useEffect(() => {
-    const updateCurrentTime = () => {
-      const now = new Date();
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const minutesSinceStart = (now - startOfDay) / (1000 * 60);
-      const position = (minutesSinceStart / (24 * 60)) * 100;
-      setCurrentTimePosition(position);
-    };
-
-    updateCurrentTime();
-    const interval = setInterval(updateCurrentTime, 60000); // 每分鐘更新一次
-    return () => clearInterval(interval);
-  }, []);
 
   // 直接從 API 取得資料
   const fetchProjectsData = async () => {
@@ -393,6 +562,19 @@ export default function GanttChart({
 
   // 取得所有 projectId
   const allProjectIds = Object.keys(projectsData);
+
+  // 取得所有不重複的 layout owner 名字
+  const allLayoutOwners = useMemo(() => {
+    const owners = new Set();
+    Object.values(projectsData).forEach(items => {
+      items.forEach(item => {
+        if (item.layoutOwner) {
+          owners.add(item.layoutOwner);
+        }
+      });
+    });
+    return Array.from(owners).sort();
+  }, [projectsData]);
 
   // 根據展開狀態產生顯示用 items
   const displayItems = useMemo(() => {
@@ -705,37 +887,233 @@ export default function GanttChart({
         d.setDate(d.getDate() + 1);
       }
     }
+
     // 計算有任務的天數
     let hasTaskDays = 0;
-    days.forEach(day => {
-      let barStart = null, barEnd = null;
-      if (role === 'designer') {
-        barStart = item.schematicFreeze ? new Date(item.schematicFreeze) : null;
-        barEnd = item.lvsClean ? new Date(item.lvsClean) : null;
-      } else if (role === 'layoutLeader') {
-        barStart = item.layoutLeaderSchematicFreeze ? new Date(item.layoutLeaderSchematicFreeze) : null;
-        barEnd = item.layoutLeaderLvsClean ? new Date(item.layoutLeaderLvsClean) : null;
-      } else if (role === 'layout') {
-        // layout 以 weeklyWeights 判斷
-        if (Array.isArray(item.weeklyWeights)) {
-          // 找出這一天屬於哪個 ISO week
-          if (day && typeof day.getDate === 'function' && typeof day.getDay === 'function') {
-            const weekMonday = new Date(day);
-            weekMonday.setDate(day.getDate() - (day.getDay() === 0 ? 6 : day.getDay() - 1));
-            const isoWeek = getISOWeek(weekMonday);
-            if (item.weeklyWeights.some(w => w.week && w.week.endsWith('W' + isoWeek) && w.value > 0)) {
-              hasTaskDays++;
-            }
+    let weight = 0;
+
+    if (role === 'layout') {
+      // layout 以 weeklyWeights 判斷
+      if (Array.isArray(item.weeklyWeights)) {
+        // 找出這一天屬於哪個 ISO week
+        if (days.length > 0 && days[0] && typeof days[0].getDate === 'function' && typeof days[0].getDay === 'function') {
+          const weekMonday = new Date(days[0]);
+          weekMonday.setDate(days[0].getDate() - (days[0].getDay() === 0 ? 6 : days[0].getDay() - 1));
+          const isoWeek = getISOWeek(weekMonday);
+          const weekWeight = item.weeklyWeights.find(w => w.week && w.week.endsWith('W' + isoWeek));
+          if (weekWeight && weekWeight.value > 0) {
+            hasTaskDays = days.length;
+            // 將小數值轉換為百分比
+            weight = Math.round(weekWeight.value * 100);
           }
-          return;
         }
       }
-      if (barStart && barEnd && day && typeof day.getTime === 'function' && day >= barStart && day <= barEnd) {
-        hasTaskDays++;
-      }
-    });
+    } else {
+      // 其他角色的計算保持不變
+      days.forEach(day => {
+        let barStart = null, barEnd = null;
+        if (role === 'designer') {
+          barStart = item.schematicFreeze ? new Date(item.schematicFreeze) : null;
+          barEnd = item.lvsClean ? new Date(item.lvsClean) : null;
+        } else if (role === 'layoutLeader') {
+          barStart = item.layoutLeaderSchematicFreeze ? new Date(item.layoutLeaderSchematicFreeze) : null;
+          barEnd = item.layoutLeaderLvsClean ? new Date(item.layoutLeaderLvsClean) : null;
+        }
+        if (barStart && barEnd && day && typeof day.getTime === 'function' && day >= barStart && day <= barEnd) {
+          hasTaskDays++;
+        }
+      });
+    }
+
+    if (role === 'layout') {
+      return {
+        ratio: days.length > 0 ? Math.round((hasTaskDays / days.length) * 100) : 0,
+        weight: weight
+      };
+    }
     return days.length > 0 ? Math.round((hasTaskDays / days.length) * 100) : 0;
   }
+
+  // 處理滑鼠移動事件
+  const handleMouseMove = useCallback((e) => {
+    if (tooltip.show) {
+      const tooltipElement = document.querySelector('.custom-tooltip');
+      if (!tooltipElement) return;
+
+      const tooltipRect = tooltipElement.getBoundingClientRect();
+      const windowWidth = window.innerWidth;
+      const windowHeight = window.innerHeight;
+
+      // 計算 tooltip 的位置
+      let x = e.clientX;
+      let y = e.clientY;
+      let position = 'left';
+
+      // 檢查右側空間
+      if (x + tooltipRect.width + 20 > windowWidth) {
+        x = e.clientX - tooltipRect.width - 10;
+        position = 'right';
+      } else {
+        x = e.clientX + 10;
+      }
+
+      // 檢查底部空間
+      if (y + tooltipRect.height + 20 > windowHeight) {
+        y = e.clientY - tooltipRect.height - 10;
+        position = position === 'right' ? 'right top' : 'left top';
+      } else {
+        y = e.clientY + 10;
+      }
+
+      // 確保不會超出視窗邊界
+      x = Math.max(10, Math.min(x, windowWidth - tooltipRect.width - 10));
+      y = Math.max(10, Math.min(y, windowHeight - tooltipRect.height - 10));
+
+      setTooltip(prev => ({
+        ...prev,
+        x,
+        y,
+        position
+      }));
+    }
+  }, [tooltip.show]);
+
+  // 添加滑鼠移動事件監聽
+  useEffect(() => {
+    if (tooltip.show) {
+      window.addEventListener('mousemove', handleMouseMove);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+    };
+  }, [tooltip.show, handleMouseMove]);
+
+  // 處理 tooltip 顯示
+  const handleTooltipShow = useCallback((e, content) => {
+    const x = e.clientX;
+    const y = e.clientY;
+    setTooltip({
+      show: true,
+      content,
+      x,
+      y,
+      position: 'left'
+    });
+  }, []);
+
+  // 處理 tooltip 隱藏
+  const handleTooltipHide = useCallback(() => {
+    setTooltip(prev => ({
+      ...prev,
+      show: false
+    }));
+  }, []);
+
+  // 生成 tooltip 內容
+  const generateTooltipContent = (item, role, unit, workload) => {
+    const status = calculateStatus(item);
+    const statusClass = status.toLowerCase().replace(' ', '-');
+
+    const header = (
+      <div className="tooltip-header">
+        <div className="tooltip-title">{item.ipName}</div>
+        <div className="tooltip-subtitle">{item.projectId}</div>
+      </div>
+    );
+
+    const statusRow = (
+      <div className="tooltip-row">
+        <span className="tooltip-label">Status</span>
+        <span className={`tooltip-status ${statusClass}`}>{status}</span>
+      </div>
+    );
+
+    if (role === 'designer') {
+      return (
+        <>
+          {header}
+          <div className="tooltip-section">
+            {statusRow}
+            <div className="tooltip-row">
+              <span className="tooltip-label">Designer</span>
+              <span className="tooltip-value">{item.designer || 'N/A'}</span>
+            </div>
+            <div className="tooltip-row">
+              <span className="tooltip-label">Start</span>
+              <span className="tooltip-date">
+                {item.schematicFreeze ? new Date(item.schematicFreeze).toLocaleDateString() : 'N/A'}
+              </span>
+            </div>
+            <div className="tooltip-row">
+              <span className="tooltip-label">End</span>
+              <span className="tooltip-date">
+                {item.lvsClean ? new Date(item.lvsClean).toLocaleDateString() : 'N/A'}
+              </span>
+            </div>
+          </div>
+        </>
+      );
+    } else if (role === 'layoutLeader') {
+      return (
+        <>
+          {header}
+          <div className="tooltip-section">
+            {statusRow}
+            <div className="tooltip-row">
+              <span className="tooltip-label">Layout Leader</span>
+              <span className="tooltip-value">{item.layoutOwner || 'N/A'}</span>
+            </div>
+            <div className="tooltip-row">
+              <span className="tooltip-label">Start</span>
+              <span className="tooltip-date">
+                {item.layoutLeaderSchematicFreeze ? new Date(item.layoutLeaderSchematicFreeze).toLocaleDateString() : 'N/A'}
+              </span>
+            </div>
+            <div className="tooltip-row">
+              <span className="tooltip-label">End</span>
+              <span className="tooltip-date">
+                {item.layoutLeaderLvsClean ? new Date(item.layoutLeaderLvsClean).toLocaleDateString() : 'N/A'}
+              </span>
+            </div>
+          </div>
+        </>
+      );
+    } else if (role === 'layout') {
+      const weightInfo = typeof workload === 'object' ? (
+        <div className="tooltip-row">
+          <span className="tooltip-label">Weight</span>
+          <span className="tooltip-weight">{workload.weight}%</span>
+        </div>
+      ) : (
+        <div className="tooltip-row">
+          <span className="tooltip-value">No weight data</span>
+        </div>
+      );
+
+      return (
+        <>
+          {header}
+          <div className="tooltip-section">
+            {statusRow}
+            <div className="tooltip-row">
+              <span className="tooltip-label">Layout Owner</span>
+              <span className="tooltip-value">{item.layoutOwner || 'N/A'}</span>
+            </div>
+            <div className="tooltip-row">
+              <span className="tooltip-label">Week</span>
+              <span className="tooltip-value">{unit.label}</span>
+            </div>
+            {weightInfo}
+            {item.reworkNote && (
+              <div className="tooltip-note">
+                {item.reworkNote}
+              </div>
+            )}
+          </div>
+        </>
+      );
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground px-4 overflow-x-auto">
@@ -781,8 +1159,8 @@ export default function GanttChart({
           <label className="font-semibold mr-2">Owner</label>
           <select value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)} className="px-2 py-1 rounded border border-border bg-card text-card-foreground min-w-[100px]">
             <option value="">（全部）</option>
-            {allProjectIds.map(pid => (
-              <option key={pid} value={pid}>{pid}</option>
+            {allLayoutOwners.map(owner => (
+              <option key={owner} value={owner}>{owner}</option>
             ))}
           </select>
         </div>
@@ -1138,6 +1516,17 @@ export default function GanttChart({
                     <td className="w-56 min-w-56 max-w-56 px-2 py-0 align-top" style={{ minHeight: 0, height: '22px', padding: 0, borderBottom: 'none', paddingBottom: '12px' }}>
                       {/* IP Name */}
                       <div className="text-gray-900 text-base truncate leading-none" style={{ margin: 0 }}>{item.ipName}</div>
+                      {/* Designer and Layout owner info */}
+                      <div className="flex items-center gap-2 text-xs text-gray-600" style={{ margin: '2px 0' }}>
+                        <span className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: '#10b981' }} />
+                          <span className="truncate">{item.designer || 'N/A'}</span>
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: '#60a5fa' }} />
+                          <span className="truncate">{item.layoutOwner || 'N/A'}</span>
+                        </span>
+                      </div>
                       {/* Status（只顯示在 IP row 內） */}
                       <div className="flex items-center gap-0" style={{ margin: 0 }}>
                         <span
@@ -1156,77 +1545,78 @@ export default function GanttChart({
                       </div>
                     </td>
                     {timeUnits.map((unit, idx) => {
-                      // 計算每個 cell 的三個 bar 的百分比
                       const designerWorkload = calculateRoleDayRatio(item, 'designer', unit, viewMode);
                       const layoutLeaderWorkload = calculateRoleDayRatio(item, 'layoutLeader', unit, viewMode);
                       const layoutWorkload = calculateRoleDayRatio(item, 'layout', unit, viewMode);
+                      const layoutRatio = typeof layoutWorkload === 'object' ? layoutWorkload.ratio : layoutWorkload;
+                      const layoutWeight = typeof layoutWorkload === 'object' ? layoutWorkload.weight : 0;
 
                       return (
-                        <td key={unit.label + '-' + idx} className="h-14 px-0 py-0 relative" style={viewMode === 'day' ? { width: dayCellWidth, minWidth: dayCellWidth, maxWidth: dayCellWidth, height: '56px', padding: 0 } : { width: 64, minWidth: 64, maxWidth: 64, height: '56px', padding: 0 }}>
+                        <td key={unit.label + '-' + idx} className="h-14 px-0 py-0 relative">
                           <div className="flex flex-col gap-1 h-full justify-center">
-                            {/* Designer bar or placeholder */}
-                            {designerWorkload > 0 ? (
-                              <div className="relative">
-                                <div style={{
-                                  height: 16,
-                                  borderRadius: 8,
-                                  background: '#10b981',
-                                  width: '100%',
-                                  margin: 0,
-                                  opacity: 0.3 + (designerWorkload / 100) * 0.7
-                                }} />
-                              </div>
-                            ) : (
-                              <div style={{
-                                height: 16,
-                                borderRadius: 8,
-                                background: 'transparent',
-                                width: '100%',
-                                margin: 0
-                              }} />
-                            )}
-                            {/* Layout Leader bar or placeholder */}
-                            {layoutLeaderWorkload > 0 ? (
-                              <div className="relative">
-                                <div style={{
-                                  height: 16,
-                                  borderRadius: 8,
-                                  background: '#60a5fa',
-                                  width: '100%',
-                                  margin: 0,
-                                  opacity: 0.3 + (layoutLeaderWorkload / 100) * 0.7
-                                }} />
-                              </div>
-                            ) : (
-                              <div style={{
-                                height: 16,
-                                borderRadius: 8,
-                                background: 'transparent',
-                                width: '100%',
-                                margin: 0
-                              }} />
-                            )}
-                            {/* Layout bar or placeholder */}
-                            {layoutWorkload > 0 ? (
-                              <div className="relative">
-                                <div style={{
-                                  height: 16,
-                                  borderRadius: 8,
-                                  background: '#f472b6',
-                                  width: '100%',
-                                  margin: 0,
-                                  opacity: 0.3 + (layoutWorkload / 100) * 0.7
-                                }} />
-                              </div>
-                            ) : (
-                              <div style={{
-                                height: 16,
-                                borderRadius: 8,
-                                background: 'transparent',
-                                width: '100%',
-                                margin: 0
-                              }} />
-                            )}
+                            {/* Designer bar */}
+                            <div className="relative h-4">
+                              {designerWorkload > 0 ? (
+                                <div 
+                                  className="relative"
+                                  onMouseEnter={(e) => handleTooltipShow(e, generateTooltipContent(item, 'designer', unit, designerWorkload))}
+                                  onMouseLeave={handleTooltipHide}
+                                >
+                                  <div style={{
+                                    height: 16,
+                                    borderRadius: 8,
+                                    background: '#10b981',
+                                    width: '100%',
+                                    margin: 0,
+                                    opacity: 0.3 + (designerWorkload / 100) * 0.7
+                                  }} />
+                                </div>
+                              ) : (
+                                <div style={{ height: 16 }} />
+                              )}
+                            </div>
+                            {/* Layout Leader bar */}
+                            <div className="relative h-4">
+                              {layoutLeaderWorkload > 0 ? (
+                                <div 
+                                  className="relative"
+                                  onMouseEnter={(e) => handleTooltipShow(e, generateTooltipContent(item, 'layoutLeader', unit, layoutLeaderWorkload))}
+                                  onMouseLeave={handleTooltipHide}
+                                >
+                                  <div style={{
+                                    height: 16,
+                                    borderRadius: 8,
+                                    background: '#60a5fa',
+                                    width: '100%',
+                                    margin: 0,
+                                    opacity: 0.3 + (layoutLeaderWorkload / 100) * 0.7
+                                  }} />
+                                </div>
+                              ) : (
+                                <div style={{ height: 16 }} />
+                              )}
+                            </div>
+                            {/* Layout bar */}
+                            <div className="relative h-4">
+                              {layoutRatio > 0 ? (
+                                <div 
+                                  className="relative"
+                                  onMouseEnter={(e) => handleTooltipShow(e, generateTooltipContent(item, 'layout', unit, layoutWorkload))}
+                                  onMouseLeave={handleTooltipHide}
+                                >
+                                  <div style={{
+                                    height: 16,
+                                    borderRadius: 8,
+                                    background: getLayoutWeightColor(layoutWeight),
+                                    width: '100%',
+                                    margin: 0,
+                                    opacity: 1
+                                  }} />
+                                </div>
+                              ) : (
+                                <div style={{ height: 16 }} />
+                              )}
+                            </div>
                           </div>
                         </td>
                       );
@@ -1236,15 +1626,21 @@ export default function GanttChart({
               })}
             </tbody>
           </table>
-          {/* 當前時間指示器 */}
-          {viewMode === 'day' && (
-            <div
-              className="timeline-current-time"
+          {/* Tooltip */}
+          {tooltip.show && (
+            <div 
+              className={`custom-tooltip ${
+                tooltip.position.includes('right') ? 'right' : ''
+              } ${
+                tooltip.position.includes('top') ? 'top' : ''
+              }`}
               style={{
-                left: `${currentTimePosition}%`,
-                transform: 'translateX(-50%)'
+                left: `${tooltip.x}px`,
+                top: `${tooltip.y}px`
               }}
-            />
+            >
+              {tooltip.content}
+            </div>
           )}
         </div>
       </div>
