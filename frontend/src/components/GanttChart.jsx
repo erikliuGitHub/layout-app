@@ -1115,6 +1115,24 @@ export default function GanttChart({
     }
   };
 
+  // 新增：獲取 layout 總人數
+  const totalLayoutEngineers = useMemo(() => {
+    const uniqueLayoutOwners = new Set();
+    Object.values(projectsData).forEach(items => {
+      items.forEach(item => {
+        if (item.layoutOwner) {
+          uniqueLayoutOwners.add(item.layoutOwner);
+        }
+      });
+    });
+    return uniqueLayoutOwners.size;
+  }, [projectsData]);
+
+  // 新增：檢查是否超過總人數的函數
+  const isOverCapacity = (count) => {
+    return count > totalLayoutEngineers;
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground px-4 overflow-x-auto">
       {/* Project 選擇下拉選單等操作區 */}
@@ -1368,18 +1386,30 @@ export default function GanttChart({
               {showTotals && (
                 <>
                   <tr className="sticky top-[104px] z-20 bg-white border-b border-gray-200">
-                    <th className="w-200 min-w-200 max-w-200 font-medium text-base text-primary py-4 bg-white">Designer Total</th>
+                    <th className="w-200 min-w-200 max-w-200 font-medium text-sm text-primary py-2 bg-gradient-to-r from-emerald-50 to-white border-r border-gray-200">
+                      Designer Total
+                      <div className="text-xs text-gray-500 mt-1">Max: {totalLayoutEngineers}</div>
+                    </th>
                     {timeUnits.map((unit, idx) => (
                       <th
                         key={`designer-total-${idx}`}
-                        className="w-16 min-w-16 max-w-16 text-center font-medium text-base text-gray-900 py-4 bg-white border-r border-gray-200"
+                        className="w-16 min-w-16 max-w-16 text-center font-medium text-sm text-emerald-700 py-2 bg-gradient-to-r from-emerald-50 to-white border-r border-gray-200"
                       >
-                        {weekTaskCount[idx]}
+                        <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full ${
+                          isOverCapacity(weekTaskCount[idx]) 
+                            ? 'bg-red-100 text-red-700 animate-pulse' 
+                            : 'bg-emerald-100 text-emerald-700'
+                        }`}>
+                          {weekTaskCount[idx]}
+                        </span>
                       </th>
                     ))}
                   </tr>
                   <tr>
-                    <th className="w-200 min-w-200 max-w-200 font-medium text-base text-primary py-4">Layout Leader Total</th>
+                    <th className="w-200 min-w-200 max-w-200 font-medium text-sm text-primary py-2 bg-gradient-to-r from-blue-50 to-white border-r border-gray-200">
+                      Layout Leader Total
+                      <div className="text-xs text-gray-500 mt-1">Max: {totalLayoutEngineers}</div>
+                    </th>
                     {timeUnits.map((unit, idx) => {
                       let count = 0;
                       if (viewMode === 'week') {
@@ -1421,15 +1451,24 @@ export default function GanttChart({
                       return (
                         <th
                           key={`layoutleader-total-${idx}`}
-                          className="w-16 min-w-16 max-w-16 text-center font-medium text-base text-gray-900 py-4"
+                          className="w-16 min-w-16 max-w-16 text-center font-medium text-sm text-blue-700 py-2 bg-gradient-to-r from-blue-50 to-white border-r border-gray-200"
                         >
-                          {count}
+                          <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full ${
+                            isOverCapacity(count) 
+                              ? 'bg-red-100 text-red-700 animate-pulse' 
+                              : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {count}
+                          </span>
                         </th>
                       );
                     })}
                   </tr>
                   <tr>
-                    <th className="w-200 min-w-200 max-w-200 font-medium text-base text-primary py-4">Layout Total</th>
+                    <th className="w-200 min-w-200 max-w-200 font-medium text-sm text-primary py-2 bg-gradient-to-r from-pink-50 to-white border-r border-gray-200">
+                      Layout Total
+                      <div className="text-xs text-gray-500 mt-1">Max: {totalLayoutEngineers}</div>
+                    </th>
                     {timeUnits.map((unit, idx) => {
                       let count = 0;
                       if (viewMode === 'week') {
@@ -1479,9 +1518,15 @@ export default function GanttChart({
                       return (
                         <th
                           key={`layout-total-${idx}`}
-                          className="w-16 min-w-16 max-w-16 text-center font-medium text-base text-gray-900 py-4"
+                          className="w-16 min-w-16 max-w-16 text-center font-medium text-sm text-pink-700 py-2 bg-gradient-to-r from-pink-50 to-white border-r border-gray-200"
                         >
-                          {count}
+                          <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full ${
+                            isOverCapacity(count) 
+                              ? 'bg-red-100 text-red-700 animate-pulse' 
+                              : 'bg-pink-100 text-pink-700'
+                          }`}>
+                            {count}
+                          </span>
                         </th>
                       );
                     })}
