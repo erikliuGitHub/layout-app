@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  oracle:
+    image: gvenzl/oracle-xe:latest
+    container_name: oracle-xe
+    ports:
+      - "1521:1521"  # Oracle 監聽端口
+      - "5500:5500"  # Enterprise Manager Express 端口
+    environment:
+      - ORACLE_PASSWORD=123456  # 設置 SYS 和 SYSTEM 用戶的密碼
+    volumes:
+      - oracle_data:/opt/oracle/oradata  # 持久化數據
+    shm_size: '2gb'  # 共享內存大小
+    restart: unless-stopped
+
+volumes:
+  oracle_data: 

@@ -450,7 +450,7 @@ export default function GanttChart({
       const result = await response.json();
       if (!result.success) throw new Error(result.message || 'Failed to fetch data');
       console.log('API response:', result);
-      setProjectsData(result.updatedProjectData || {});
+      setProjectsData(result.data || {});
     } catch (err) {
       setError(err.message);
     } finally {

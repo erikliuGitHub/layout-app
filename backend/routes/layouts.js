@@ -9,6 +9,7 @@ router.post('/update-weight', async (req, res) => {
   const { projectId, ipName, week, value, userId, role } = req.body;
   
   try {
+    console.log('收到的 req.body.data:', req.body.data);
     await db.transaction(async (trx) => {
       // 1. 獲取 layout task ID
       const task = await trx('layout_tasks')
@@ -86,6 +87,18 @@ router.get('/weight-history', async (req, res) => {
         'weekly_weight_history.version'
       ]);
       
+    if (history.length > 0) {
+      history.forEach(row => {
+        console.warn(
+          '異常 row ipName:', row?.ipName,
+          '型別:', typeof row?.ipName,
+          'plannedMandays:', row?.plannedMandays,
+          'layoutClosed:', row?.layoutClosed,
+          '原始值:', row
+        );
+      });
+    }
+    
     res.json({ history });
   } catch (error) {
     console.error('Error fetching weight history:', error);

@@ -1,11 +1,11 @@
-const express = require("express");
-const cors = require("cors");
-const { v4: uuidv4 } = require('uuid');
-const { db, initializeDatabase } = require('./config/db');
-const layoutRoutes = require('./routes/layouts');
-const fs = require('fs');
-const csv = require('csv-parser');
-const path = require('path');
+import express from 'express';
+import cors from 'cors';
+import { v4 as uuidv4 } from 'uuid';
+import { executeQuery, executeUpdate, initializeDatabase } from './config/db.js';
+import layoutRoutes from './routes/layouts.js';
+import fs from 'fs';
+import csv from 'csv-parser';
+import path from 'path';
 
 const app = express();
 const port = 3001;
@@ -60,44 +60,21 @@ app.use((err, req, res, next) => {
 // 初始化資料庫並導入CSV數據
 async function initializeApp() {
   try {
+    // 設置使用 Oracle 數據庫
+    process.env.DB_TYPE = 'oracle';
+    
     // 初始化資料庫結構
-    await initializeDatabase();
+    await initializeDatabase(false);
     console.log('Database structure initialized');
 
     // 檢查資料庫是否為空
-    const count = await new Promise((resolve, reject) => {
-      db.get('SELECT COUNT(*) as count FROM layout_tasks', [], (err, row) => {
-        if (err) reject(err);
-        else resolve(row.count);
-      });
-    });
+    const countResult = await executeQuery('SELECT COUNT(*) as total FROM layout_tasks');
+    const count = countResult.rows[0].TOTAL;
 
     // 如果資料庫為空，則導入CSV數據
     if (count === 0) {
       console.log('Database is empty, importing data from CSV...');
       
-      // 準備插入語句
-      const stmt = db.prepare(`
-        INSERT INTO layout_tasks (
-          project_id,
-          ip_name,
-          designer,
-          layout_owner,
-          schematic_freeze,
-          lvs_clean,
-          layout_leader_schematic_freeze,
-          layout_leader_lvs_clean,
-          planned_mandays,
-          weekly_weights,
-          actual_hours,
-          version,
-          rework_note,
-          layout_closed,
-          modified_by,
-          last_modified
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      `);
-
       // 從CSV文件讀取數據
       const csvPath = path.join(__dirname, '../scripts/sampleData.csv');
       console.log('Reading from CSV file:', csvPath);
@@ -106,7 +83,7 @@ async function initializeApp() {
       await new Promise((resolve, reject) => {
         fs.createReadStream(csvPath)
           .pipe(csv())
-          .on('data', (row) => {
+          .on('data', async (row) => {
             try {
               // 計算預計工作天數（從schematic_freeze到lvs_clean的天數）
               const schematicDate = new Date(row.schematic_freeze);
@@ -114,33 +91,73 @@ async function initializeApp() {
               const diffTime = Math.abs(lvsDate - schematicDate);
               const plannedMandays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-              // 為每個記錄設置值
-              const values = [
-                row.project_id,
-                row.ip_name,
-                row.designer,
-                row.layout_owner || null,
-                row.schematic_freeze,
-                row.lvs_clean,
-                row.layout_leader_schematic_freeze,
-                row.layout_leader_lvs_clean,
-                plannedMandays.toString(),
-                row.weekly_weights || '[]',
-                '[]', // actual_hours 默認為空數組
-                1,    // version
-                '',   // rework_note
-                0,    // layout_closed
-                'system' // modified_by
-              ];
+              // 插入數據
+              const insertSQL = `
+                INSERT INTO layout_tasks (
+                  id,
+                  project_id,
+                  ip_name,
+                  designer,
+                  layout_owner,
+                  schematic_freeze,
+                  lvs_clean,
+                  layout_leader_schematic_freeze,
+                  layout_leader_lvs_clean,
+                  planned_mandays,
+                  weekly_weights,
+                  actual_hours,
+                  version,
+                  rework_note,
+                  layout_closed,
+                  modified_by,
+                  last_modified
+                ) VALUES (
+                  :id,
+                  :project_id,
+                  :ip_name,
+                  :designer,
+                  :layout_owner,
+                  TO_DATE(:schematic_freeze, 'YYYY-MM-DD'),
+                  TO_DATE(:lvs_clean, 'YYYY-MM-DD'),
+                  TO_DATE(:layout_leader_schematic_freeze, 'YYYY-MM-DD'),
+                  TO_DATE(:layout_leader_lvs_clean, 'YYYY-MM-DD'),
+                  :planned_mandays,
+                  :weekly_weights,
+                  :actual_hours,
+                  :version,
+                  :rework_note,
+                  :layout_closed,
+                  :modified_by,
+                  CURRENT_TIMESTAMP
+                )
+              `;
 
-              stmt.run(...values);
+              const params = {
+                id: uuidv4(),
+                project_id: row.project_id,
+                ip_name: row.ip_name,
+                designer: row.designer,
+                layout_owner: row.layout_owner || null,
+                schematic_freeze: row.schematic_freeze,
+                lvs_clean: row.lvs_clean,
+                layout_leader_schematic_freeze: row.layout_leader_schematic_freeze,
+                layout_leader_lvs_clean: row.layout_leader_lvs_clean,
+                planned_mandays: plannedMandays.toString(),
+                weekly_weights: row.weekly_weights || '[]',
+                actual_hours: '[]',
+                version: 1,
+                rework_note: '',
+                layout_closed: 0,
+                modified_by: 'system'
+              };
+
+              await executeQuery(insertSQL, params);
               rowCount++;
             } catch (error) {
               console.error('Error processing row:', row, error);
             }
           })
           .on('end', () => {
-            stmt.finalize();
             console.log(`Successfully processed ${rowCount} rows from CSV`);
             resolve();
           })
@@ -151,28 +168,15 @@ async function initializeApp() {
       });
 
       // 驗證導入的數據
-      const importedCount = await new Promise((resolve, reject) => {
-        db.get('SELECT COUNT(*) as count FROM layout_tasks', [], (err, row) => {
-          if (err) {
-            console.error('Error counting records:', err);
-            reject(err);
-          } else {
-            console.log(`Total records in database: ${row.count}`);
-            resolve(row.count);
-          }
-        });
-      });
+      const importedCountResult = await executeQuery('SELECT COUNT(*) as total FROM layout_tasks');
+      const importedCount = importedCountResult.rows[0].TOTAL;
+      console.log(`Total records in database: ${importedCount}`);
 
       // 檢查數據是否正確導入
-      db.all('SELECT project_id, ip_name FROM layout_tasks', [], (err, rows) => {
-        if (err) {
-          console.error('Error fetching records:', err);
-        } else {
-          console.log('Sample of imported records:');
-          rows.slice(0, 5).forEach(row => {
-            console.log(`- ${row.project_id}: ${row.ip_name}`);
-          });
-        }
+      const sampleResult = await executeQuery('SELECT project_id, ip_name FROM layout_tasks WHERE ROWNUM <= 5');
+      console.log('Sample of imported records:');
+      sampleResult.rows.forEach(row => {
+        console.log(`- ${row.PROJECT_ID}: ${row.IP_NAME}`);
       });
     } else {
       console.log(`Database already contains ${count} records, skipping CSV import`);
@@ -196,4 +200,4 @@ async function initializeApp() {
 // 啟動應用程序
 initializeApp();
 
-module.exports = app; 
+export default app; 

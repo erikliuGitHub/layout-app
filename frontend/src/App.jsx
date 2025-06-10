@@ -75,7 +75,7 @@ export default function App() {
         }
 
         // 設置項目數據
-        const projectData = result.updatedProjectData || {};
+        const projectData = result.data || {};
         setProjectsData(projectData);
 
         // 更新項目ID列表
@@ -134,13 +134,13 @@ export default function App() {
         // 更新項目數據
         setProjectsData(prev => ({
           ...prev,
-          [projectId]: result.updatedProjectData || []
+          [projectId]: result.data || []
         }));
 
         // 更新用戶列表
         const designers = new Set();
         const layoutOwners = new Set();
-        result.updatedProjectData.forEach(item => {
+        (result.data || []).forEach(item => {
           if (item.designer) designers.add(item.designer);
           if (item.layoutOwner) layoutOwners.add(item.layoutOwner);
         });
@@ -156,6 +156,13 @@ export default function App() {
 
   return (
     <>
+      <div className="header-bar">
+        <img src="/assets/logo-lrps.png" alt="LRPS Logo" className="header-logo" />
+        <div>
+          <div className="header-title">LRPS</div>
+          <div className="header-subtitle">Layout Resource Plan System</div>
+        </div>
+      </div>
       <div>
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "16px" }}>

@@ -65,6 +65,65 @@ const getDateStyle = (layoutDate, designerDate) => {
   return "";
 };
 
+// 新增日期格式化 function
+const formatDateForSubmit = (date) => {
+  if (!date) return null;
+  try {
+    if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return null;
+    return d.toISOString().slice(0, 10);
+  } catch (e) {
+    console.error('Date formatting error:', e);
+    return null;
+  }
+};
+
+function toDateString(val) {
+  if (!val) return "";
+  if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+// 驗證必要欄位
+function validateData(data) {
+  return (Array.isArray(data) ? data : []).map((item, idx) => {
+    const errors = [];
+    if (!item || typeof item.ipName !== 'string' || !item.ipName.trim()) {
+      errors.push('IP Name 必填');
+    }
+    if (!item || typeof item.layoutOwner !== 'string' || !item.layoutOwner.trim()) {
+      errors.push('Layout Owner 必填');
+    }
+    if (!item || !item.layoutLeaderSchematicFreeze || !/^\d{4}-\d{2}-\d{2}$/.test(toDateString(item.layoutLeaderSchematicFreeze))) {
+      errors.push('Schematic Freeze 必填且需為 YYYY-MM-DD 格式');
+    }
+    if (!item || !item.layoutLeaderLvsClean || !/^\d{4}-\d{2}-\d{2}$/.test(toDateString(item.layoutLeaderLvsClean))) {
+      errors.push('LVS Clean 必填且需為 YYYY-MM-DD 格式');
+    }
+    return { idx, errors };
+  }).filter(r => r.errors.length > 0);
+}
+
+// 將 fetchData 提取為可重用函數
+const fetchData = async (projectId, setProjectsData) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/layouts/${projectId}`);
+    if (!response.ok) throw new Error(`Failed to fetch data: ${response.status}`);
+    const result = await response.json();
+    if (!result.success) throw new Error('Failed to fetch data');
+    const serverData = Array.isArray(result.data) ? result.data : [];
+    setProjectsData(prev => ({
+      ...prev,
+      [projectId]: serverData
+    }));
+  } catch (err) {
+    alert(`Failed to fetch data: ${err.message}`);
+  }
+};
+
 export default function LayoutLeaderTab({
   projectsData,
   setProjectsData,
@@ -193,128 +252,46 @@ export default function LayoutLeaderTab({
     });
   };
 
-  const handleCloseRow = async (idx) => {
-    try {
-      const updated = [...projectsData[currentProjectId]];
-      updated[idx] = {
-        ...updated[idx],
-        layoutClosed: true,
-        lastModified: new Date().toISOString(),
-        modifiedBy: currentUser
-      };
+  const handleCloseRow = (idx) => {
+    const updated = [...projectsData[currentProjectId]];
+    updated[idx] = {
+      ...updated[idx],
+      layoutClosed: 1,
+      lastModified: new Date().toISOString(),
+      modifiedBy: currentUser
+    };
 
-      // 更新前端顯示
-      setProjectsData(prev => ({
-        ...prev,
-        [currentProjectId]: updated
-      }));
-
-      // 提交到後端
-      const response = await fetch(`${API_BASE_URL}/layouts/submit`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          projectId: currentProjectId,
-          data: updated,
-          userId: currentUser
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update status');
-      }
-
-      const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.message || 'Failed to update status');
-      }
-
-      // 更新前端狀態為後端返回的數據
-      setProjectsData(prev => ({
-        ...prev,
-        [currentProjectId]: result.updatedProjectData || []
-      }));
-
-      // 如果有 refreshData 函數則調用
-      if (typeof refreshData === 'function') {
-        await refreshData();
-      }
-    } catch (err) {
-      console.error('Error updating status:', err);
-      alert(`Failed to update status: ${err.message}`);
-    }
+    // 只更新前端狀態
+    setProjectsData(prev => ({
+      ...prev,
+      [currentProjectId]: updated
+    }));
   };
 
-  const handleReopenRow = async (idx) => {
-    try {
-      const updated = [...projectsData[currentProjectId]];
-      updated[idx] = {
-        ...updated[idx],
-        layoutClosed: false,
-        lastModified: new Date().toISOString(),
-        modifiedBy: currentUser
-      };
+  const handleReopenRow = (idx) => {
+    const updated = [...projectsData[currentProjectId]];
+    updated[idx] = {
+      ...updated[idx],
+      layoutClosed: 0,
+      lastModified: new Date().toISOString(),
+      modifiedBy: currentUser
+    };
 
-      // 更新前端顯示
-      setProjectsData(prev => ({
-        ...prev,
-        [currentProjectId]: updated
-      }));
-
-      // 提交到後端
-      const response = await fetch(`${API_BASE_URL}/layouts/submit`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          projectId: currentProjectId,
-          data: updated,
-          userId: currentUser
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update status');
-      }
-
-      const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.message || 'Failed to update status');
-      }
-
-      // 更新前端狀態為後端返回的數據
-      setProjectsData(prev => ({
-        ...prev,
-        [currentProjectId]: result.updatedProjectData || []
-      }));
-
-      // 如果有 refreshData 函數則調用
-      if (typeof refreshData === 'function') {
-        await refreshData();
-      }
-    } catch (err) {
-      console.error('Error updating status:', err);
-      alert(`Failed to update status: ${err.message}`);
-    }
+    // 只更新前端狀態
+    setProjectsData(prev => ({
+      ...prev,
+      [currentProjectId]: updated
+    }));
   };
 
   const handleDeleteRow = (idx) => {
     const confirmDelete = window.confirm("Are you sure you want to delete this row?");
     if (!confirmDelete) return;
 
-    // Make a shallow copy of the whole projectsData
+    // 只更新前端狀態
     const newProjectsData = { ...projectsData };
-    // Make a copy of the current project's array
     const updated = [...(newProjectsData[currentProjectId] || [])];
-    // Optionally, store the deleted row for any further cleanup
-    const deletedRow = updated[idx];
     updated.splice(idx, 1);
-    // Assign back to the shared state
     newProjectsData[currentProjectId] = updated;
     setProjectsData(newProjectsData);
   };
@@ -322,59 +299,45 @@ export default function LayoutLeaderTab({
   const handleSubmit = async () => {
     try {
       const dataSource = Array.isArray(projectsData?.[currentProjectId]) ? projectsData[currentProjectId] : [];
-      
+      // enrich 一次資料，強制格式化日期
+      const enriched = dataSource.map(item => {
+        const layoutLeaderSchematicFreeze = toDateString(item.layoutLeaderSchematicFreeze) || toDateString(item.schematicFreeze);
+        const layoutLeaderLvsClean = toDateString(item.layoutLeaderLvsClean) || toDateString(item.lvsClean);
+        return {
+          ...item,
+          layoutLeaderSchematicFreeze,
+          layoutLeaderLvsClean
+        };
+      });
+      // 驗證
+      const invalids = validateData(enriched);
+      if (invalids.length === enriched.length) {
+        alert('請至少填寫一筆正確資料再送出！');
+        return;
+      }
+      if (invalids.length > 0) {
+        alert('有異常資料，請檢查 IP Name、Layout Owner、Schematic Freeze、LVS Clean！');
+        return;
+      }
       if (!dataSource.length) {
         alert('No data to submit');
         return;
       }
-
+      // mapping 成送出格式
+      const formattedData = enriched.map(item => ({
+        ip_name: item.ipName.trim(),
+        designer: item.designer?.trim() || "",
+        layout_owner: item.layoutOwner?.trim() || "",
+        schematic_freeze: formatDateForSubmit(item.schematicFreeze),
+        lvs_clean: formatDateForSubmit(item.lvsClean),
+        layout_leader_schematic_freeze: formatDateForSubmit(item.layoutLeaderSchematicFreeze),
+        layout_leader_lvs_clean: formatDateForSubmit(item.layoutLeaderLvsClean),
+        planned_mandays: Number.isFinite(Number(item.plannedMandays)) ? Number(item.plannedMandays) : 0,
+        version: Number(item.version),
+        layout_closed: item.layoutClosed ? 1 : 0,
+        // 其他欄位如有需要可補上
+      }));
       // Fetch latest data from the server
-      const latestResponse = await fetch(`${API_BASE_URL}/layouts/${currentProjectId}`);
-      if (!latestResponse.ok) {
-        const errorText = await latestResponse.text();
-        throw new Error(`Failed to fetch latest data from server. Status: ${latestResponse.status} - ${errorText}`);
-      }
-      const latestResult = await latestResponse.json();
-      
-      if (!latestResult.success || !Array.isArray(latestResult.updatedProjectData)) {
-        throw new Error("Invalid response from server");
-      }
-
-      const latestData = latestResult.updatedProjectData;
-
-      // Version check and data preparation
-      const updatedData = dataSource.map(localItem => {
-        const { 
-          status, 
-          plannedMandays,
-          schematicFreeze,
-          lvsClean,
-          ...itemWithoutCalculatedFields 
-        } = localItem;
-        
-        if (!itemWithoutCalculatedFields.ipName) {
-          throw new Error("Local item missing ipName");
-        }
-
-        const latestItem = latestData.find(item => item.ipName === itemWithoutCalculatedFields.ipName);
-        
-        if (latestItem && localItem.version !== latestItem.version) {
-          throw new Error(`Version conflict for ${itemWithoutCalculatedFields.ipName}. Please refresh and try again.`);
-        }
-
-        // 只提交 layout leader 相關的欄位
-        return {
-          ...itemWithoutCalculatedFields,
-          layoutLeaderSchematicFreeze: itemWithoutCalculatedFields.layoutLeaderSchematicFreeze,
-          layoutLeaderLvsClean: itemWithoutCalculatedFields.layoutLeaderLvsClean,
-          layoutOwner: itemWithoutCalculatedFields.layoutOwner,
-          layoutClosed: itemWithoutCalculatedFields.layoutClosed,
-          modifiedBy: currentUser,
-          lastModified: new Date().toISOString()
-        };
-      });
-
-      // Submit updates
       const response = await fetch(`${API_BASE_URL}/layouts/submit`, {
         method: 'POST',
         headers: {
@@ -382,96 +345,39 @@ export default function LayoutLeaderTab({
         },
         body: JSON.stringify({
           projectId: currentProjectId,
-          data: updatedData,
+          data: formattedData,
           userId: currentUser,
-          role: 'layoutLeader' // 添加角色標識
+          role: 'layoutLeader'
         })
       });
-
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Server error: ${response.status} - ${errorText}`);
       }
-
       const result = await response.json();
-
       if (!result.success) {
         throw new Error(result.message || 'Failed to submit updates');
       }
-
-      // Update frontend state with server response
-      setProjectsData(prev => ({
-        ...prev,
-        [currentProjectId]: result.updatedProjectData || []
-      }));
-
-      // 檢查並調用 refreshData
-      if (typeof refreshData === 'function') {
-        await refreshData();
-      }
-
+      // Submit 成功後自動 fetch 最新資料
+      await fetchData(currentProjectId, setProjectsData);
       alert("Changes submitted successfully!");
-
     } catch (err) {
       console.error('Error submitting changes:', err);
+      // catch 內也不再自動刷新 version conflict，只顯示錯誤
+      if (err.message && err.message.includes('Version conflict')) {
+        alert('版本衝突：資料已被他人修改，請重新整理頁面！');
+        return;
+      }
       alert(`Failed to submit changes: ${err.message}`);
     }
   };
 
-  // 在組件加載時獲取最新數據
+  // useEffect 內 fetchData 也改用新函數
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        console.log("Fetching data for project:", currentProjectId);
-        const response = await fetch(`${API_BASE_URL}/layouts/${currentProjectId}`);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch data: ${response.status}`);
-        }
-        const result = await response.json();
-        console.log("Received data from server:", result);
-        
-        if (!result.success) {
-          throw new Error('Failed to fetch data');
-        }
-
-        setProjectsData(prev => {
-          console.log("Updating projects data:", {
-            previous: prev[currentProjectId],
-            new: result.updatedProjectData
-          });
-          return {
-            ...prev,
-            [currentProjectId]: result.updatedProjectData.map(item => {
-              // 獲取現有的 layoutLeader 數據
-              const existingItem = prev[currentProjectId]?.find(prevItem => prevItem.ipName === item.ipName) || {};
-              
-              // 檢查是否已經有 layoutLeader 的時間數據
-              const hasExistingLayoutLeaderData = existingItem.layoutLeaderSchematicFreeze || existingItem.layoutLeaderLvsClean;
-              
-              return {
-                ...item,
-                // 只在沒有現有 layoutLeader 數據時才使用 designer 的數據作為初始值
-                layoutLeaderSchematicFreeze: hasExistingLayoutLeaderData ? 
-                  existingItem.layoutLeaderSchematicFreeze : 
-                  item.schematicFreeze,
-                layoutLeaderLvsClean: hasExistingLayoutLeaderData ? 
-                  existingItem.layoutLeaderLvsClean : 
-                  item.lvsClean,
-                layoutClosed: item.layoutClosed === true || item.layoutClosed === 1
-              };
-            })
-          };
-        });
-      } catch (err) {
-        console.error('Error fetching data:', err);
-        alert(`Failed to fetch data: ${err.message}`);
-      }
-    };
-
     if (currentProjectId) {
-      fetchData();
+      fetchData(currentProjectId, setProjectsData);
     }
-  }, [currentProjectId]); // 只在 currentProjectId 改變時觸發
+  }, [currentProjectId]);
 
   // Debug logging for data
   useEffect(() => {
@@ -610,7 +516,13 @@ export default function LayoutLeaderTab({
                       <td className="p-3" style={{ minWidth: '180px', maxWidth: '180px', textAlign: 'center' }}>
                         <div className="relative">
                           <DatePicker
-                            selected={row.layoutLeaderSchematicFreeze ? new Date(row.layoutLeaderSchematicFreeze) : null}
+                            selected={
+                              row.layoutLeaderSchematicFreeze
+                                ? new Date(row.layoutLeaderSchematicFreeze)
+                                : row.schematicFreeze
+                                  ? new Date(row.schematicFreeze)
+                                  : null
+                            }
                             onChange={date => handleFieldChange(idx, "schematicFreeze", date)}
                             dateFormat="yyyy-MM-dd"
                             className="date-picker"
@@ -635,7 +547,13 @@ export default function LayoutLeaderTab({
                       <td className="p-3" style={{ minWidth: '180px', maxWidth: '180px', textAlign: 'center' }}>
                         <div className="relative">
                           <DatePicker
-                            selected={row.layoutLeaderLvsClean ? new Date(row.layoutLeaderLvsClean) : null}
+                            selected={
+                              row.layoutLeaderLvsClean
+                                ? new Date(row.layoutLeaderLvsClean)
+                                : row.lvsClean
+                                  ? new Date(row.lvsClean)
+                                  : null
+                            }
                             onChange={date => handleFieldChange(idx, "lvsClean", date)}
                             dateFormat="yyyy-MM-dd"
                             className="date-picker"
@@ -690,19 +608,21 @@ export default function LayoutLeaderTab({
                               Split
                             </button>
                             {row.layoutClosed ? (
-                              <button
-                                onClick={() => handleReopenRow(idx)}
-                                className="w-20 px-2 py-1.5 bg-emerald-500 text-white rounded-md text-xs font-medium 
-                                  transition-colors hover:bg-emerald-600 focus:outline-none focus:ring-2 
-                                  focus:ring-emerald-500 focus:ring-offset-2 shadow-sm hover:shadow-md"
-                              >
-                                Reopen
-                              </button>
+                              <span style={{ textDecoration: 'none' }}>
+                                <button
+                                  onClick={() => handleReopenRow(idx)}
+                                  className={`w-20 px-2 py-1.5 bg-emerald-500 text-white rounded-md text-xs font-medium \
+                                    transition-colors hover:bg-emerald-600 focus:outline-none focus:ring-2 \
+                                    focus:ring-emerald-500 focus:ring-offset-2 shadow-sm hover:shadow-md`}
+                                >
+                                  Reopen
+                                </button>
+                              </span>
                             ) : (
                               <button
                                 onClick={() => handleCloseRow(idx)}
-                                className="w-20 px-2 py-1.5 bg-orange-500 text-white rounded-md text-xs font-medium 
-                                  transition-colors hover:bg-orange-600 focus:outline-none focus:ring-2 
+                                className="w-20 px-2 py-1.5 bg-orange-500 text-white rounded-md text-xs font-medium \
+                                  transition-colors hover:bg-orange-600 focus:outline-none focus:ring-2 \
                                   focus:ring-orange-500 focus:ring-offset-2 shadow-sm hover:shadow-md"
                               >
                                 Close

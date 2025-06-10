@@ -30,6 +30,19 @@ export default function DesignerTab({
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [invalidRows, setInvalidRows] = useState([]);
+
+  // 計算工作日的函數（全域可用）
+  function calcBusinessDays(startDate, endDate) {
+    let count = 0;
+    const cur = new Date(startDate);
+    while (cur <= endDate) {
+      const day = cur.getDay();
+      if (day !== 0 && day !== 6) count++;
+      cur.setDate(cur.getDate() + 1);
+    }
+    return count;
+  }
 
   const data = Array.isArray(projectsData?.[currentProjectId]) ? projectsData[currentProjectId] : [];
 
@@ -46,18 +59,6 @@ export default function DesignerTab({
     // Always use up-to-date data from projectsData for currentProjectId
     const dataSource = Array.isArray(projectsData?.[currentProjectId]) ? projectsData[currentProjectId] : [];
     
-    // 計算工作日的函數
-    const calcBusinessDays = (startDate, endDate) => {
-      let count = 0;
-      const cur = new Date(startDate);
-      while (cur <= endDate) {
-        const day = cur.getDay();
-        if (day !== 0 && day !== 6) count++;
-        cur.setDate(cur.getDate() + 1);
-      }
-      return count;
-    };
-
     // Add status and plannedMandays
     const enriched = dataSource.map(item => {
       const schematicDate = item.schematicFreeze ? new Date(item.schematicFreeze) : null;
@@ -119,10 +120,159 @@ export default function DesignerTab({
     }
   };
 
+  const formatDateForSubmit = (date) => {
+    if (!date) return null;
+    try {
+      // 若已是 YYYY-MM-DD，直接回傳
+      if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return null;
+      return d.toISOString().slice(0, 10);
+    } catch (e) {
+      console.error('Date formatting error:', e);
+      return null;
+    }
+  };
+
+  // 強制轉換為 YYYY-MM-DD 格式
+  function toDateString(val) {
+    if (!val) return "";
+    if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return "";
+    return d.toISOString().slice(0, 10);
+  }
+
+  // Helper: 統一送出 snake_case 並型別正確
+  function normalizeForBackend(item) {
+    // 若 ipName 為空，直接丟棄這筆資料
+    if (!item.ipName || typeof item.ipName !== 'string' || !item.ipName.trim()) return null;
+    return {
+      ip_name: item.ipName.trim(),
+      designer: item.designer?.trim() || "",
+      layout_owner: item.layoutOwner?.trim() || "",
+      schematic_freeze: formatDateForSubmit(item.schematicFreeze),
+      lvs_clean: formatDateForSubmit(item.lvsClean),
+      layout_leader_schematic_freeze: formatDateForSubmit(item.layoutLeaderSchematicFreeze),
+      layout_leader_lvs_clean: formatDateForSubmit(item.layoutLeaderLvsClean),
+      planned_mandays: Number.isFinite(Number(item.plannedMandays)) ? Number(item.plannedMandays) : 0,
+      version: Number.isFinite(Number(item.version)) ? Number(item.version) : 1,
+      layout_closed: item.layoutClosed ? 1 : 0,
+      // 其他欄位如有需要可補上
+    };
+  }
+
+  // 資料驗證函數：只檢查四個必要欄位
+  function validateData(data) {
+    return (Array.isArray(data) ? data : []).map((item, idx) => {
+      const errors = [];
+      if (!item || typeof item.ipName !== 'string' || !item.ipName.trim()) {
+        errors.push('IP Name 必填');
+      }
+      if (!item || typeof item.designer !== 'string' || !item.designer.trim()) {
+        errors.push('Designer 必填');
+      }
+      if (!item || !item.schematicFreeze || !/^\d{4}-\d{2}-\d{2}$/.test(item.schematicFreeze)) {
+        errors.push('Schematic Freeze 必填且需為 YYYY-MM-DD 格式');
+      }
+      if (!item || !item.lvsClean || !/^\d{4}-\d{2}-\d{2}$/.test(item.lvsClean)) {
+        errors.push('LVS Clean 必填且需為 YYYY-MM-DD 格式');
+      }
+      return { idx, errors };
+    }).filter(r => r.errors.length > 0);
+  }
+
   const handleSubmit = async () => {
     try {
       const dataSource = Array.isArray(projectsData?.[currentProjectId]) ? projectsData[currentProjectId] : [];
+      // enrich 一次資料，強制格式化日期
+      const enriched = dataSource.map(item => {
+        const schematicFreeze = toDateString(item.schematicFreeze);
+        const lvsClean = toDateString(item.lvsClean);
+        const schematicDate = schematicFreeze ? new Date(schematicFreeze) : null;
+        const lvsCleanDate = lvsClean ? new Date(lvsClean) : null;
+        // 如果日期不合法，mandays 補 0
+        const mandays = (schematicDate && lvsCleanDate && !isNaN(schematicDate) && !isNaN(lvsCleanDate))
+          ? calcBusinessDays(schematicDate, lvsCleanDate)
+          : 0;
+        return {
+          ...item,
+          schematicFreeze,
+          lvsClean,
+          plannedMandays: mandays
+        };
+      });
+      // log enrich 後每一 row 的四個必要欄位與型別
+      enriched.forEach((item, idx) => {
+        console.log(`Row ${idx}:`, {
+          ipName: item.ipName,
+          designer: item.designer,
+          schematicFreeze: item.schematicFreeze,
+          lvsClean: item.lvsClean,
+          types: {
+            ipName: typeof item.ipName,
+            designer: typeof item.designer,
+            schematicFreeze: typeof item.schematicFreeze,
+            lvsClean: typeof item.lvsClean,
+          }
+        });
+      });
+      // 用 enrich 過的資料做驗證
+      const invalids = validateData(enriched);
+      console.log('驗證未過的 row:', invalids);
+      if (invalids.length === enriched.length) {
+        alert('請至少填寫一筆正確資料再送出！');
+        setInvalidRows(invalids.map(r => r.idx));
+        return;
+      }
+      if (invalids.length > 0) {
+        alert('有異常資料，請檢查 IP Name、Designer、Schematic Freeze、LVS Clean！');
+        setInvalidRows(invalids.map(r => r.idx));
+        return;
+      }
+      setInvalidRows([]);
       
+      if (!dataSource.length) {
+        alert('No data to submit');
+        return;
+      }
+
+      // 送出前 log 每一筆的 plannedMandays 型別與內容
+      console.log('Check plannedMandays:', (Array.isArray(dataSource) ? dataSource : []).map(item => ({
+        ipName: item?.ipName,
+        layoutClosed: item?.layoutClosed,
+        plannedMandays: item?.plannedMandays,
+        plannedMandaysType: typeof item?.plannedMandays,
+        plannedMandaysIsFinite: Number.isFinite(Number(item?.plannedMandays))
+      })));
+
+      // mapping 成送出格式，強制格式化日期，只送出驗證通過且 ipName 嚴格合法的 row
+      const validData = enriched.filter((item, idx) =>
+        !invalids.map(r => r.idx).includes(idx) &&
+        typeof item.ipName === 'string' &&
+        item.ipName.trim() !== '' &&
+        item.ipName !== undefined &&
+        item.ipName !== null
+      );
+      const formattedData = validData.map(item => ({
+        ip_name: item.ipName.trim(),
+        designer: item.designer?.trim() || "",
+        schematic_freeze: toDateString(item.schematicFreeze),
+        lvs_clean: toDateString(item.lvsClean),
+        layout_owner: item.layoutOwner?.trim() || "",
+        layout_leader_schematic_freeze: item.layoutLeaderSchematicFreeze ? toDateString(item.layoutLeaderSchematicFreeze) : null,
+        layout_leader_lvs_clean: item.layoutLeaderLvsClean ? toDateString(item.layoutLeaderLvsClean) : null,
+        planned_mandays: Number.isFinite(Number(item.plannedMandays)) ? Number(item.plannedMandays) : 0,
+        version: Number.isFinite(Number(item.version)) ? Number(item.version) : 1,
+        layout_closed: item.layoutClosed ? 1 : 0,
+        // 其他欄位...
+      }));
+      // 新增 log：送出前每一筆的 ip_name 與 lvs_clean
+      formattedData.forEach((row, idx) => {
+        console.log(`[handleSubmit] row ${idx}: ip_name=${row.ip_name}, lvs_clean=${row.lvs_clean}`);
+      });
+      console.log('Submitting formatted data:', formattedData);
+
       // Fetch latest data from the server
       const latestResponse = await fetch(`${API_BASE_URL}/layouts/${currentProjectId}`);
       if (!latestResponse.ok) {
@@ -130,33 +280,14 @@ export default function DesignerTab({
       }
       const latestResult = await latestResponse.json();
       
-      if (!latestResult.success || !Array.isArray(latestResult.updatedProjectData)) {
+      if (!latestResult.success || !Array.isArray(latestResult.data)) {
         throw new Error("Invalid response from server");
       }
 
-      const latestData = latestResult.updatedProjectData;
+      const latestData = latestResult.data;
 
-      // Version check and data preparation
-      const updatedData = dataSource.map(localItem => {
-        const { status, layoutLeaderSchematicFreeze, layoutLeaderLvsClean, ...itemWithoutStatus } = localItem;
-        
-        if (!itemWithoutStatus.ipName) {
-          throw new Error("Local item missing ipName");
-        }
-
-        const latestItem = latestData.find(item => item.ipName === itemWithoutStatus.ipName);
-        
-        // If this is a new item (e.g., from copy), don't do version check
-        if (latestItem && localItem.version !== latestItem.version) {
-          throw new Error(`Version conflict for ${itemWithoutStatus.ipName}. Please refresh and try again.`);
-        }
-
-        return {
-          ...itemWithoutStatus,
-          modifiedBy: currentUser,
-          lastModified: new Date().toISOString()
-        };
-      });
+      // 在發送前檢查所有數據
+      console.log('Submitting formatted data:', formattedData);
 
       // Submit updates
       const response = await fetch(`${API_BASE_URL}/layouts/submit`, {
@@ -166,14 +297,15 @@ export default function DesignerTab({
         },
         body: JSON.stringify({
           projectId: currentProjectId,
-          data: updatedData,
+          data: formattedData,
           userId: currentUser,
-          role: 'designer' // 添加角色標識
+          role: 'designer'
         })
       });
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('Server response:', errorText);
         throw new Error(`Server error: ${response.status} - ${errorText}`);
       }
 
@@ -186,17 +318,16 @@ export default function DesignerTab({
       // Update frontend state with server response
       setProjectsData(prev => ({
         ...prev,
-        [currentProjectId]: result.updatedProjectData || []
+        [currentProjectId]: result.data || []
       }));
 
-      // Refresh data across all tabs
       await refreshData();
 
       alert("Changes submitted successfully!");
 
     } catch (err) {
       console.error('Error submitting changes:', err);
-      alert(err.message);
+      alert(`Failed to submit changes: ${err.message}`);
     }
   };
 
@@ -261,14 +392,20 @@ export default function DesignerTab({
         }
 
         const result = await response.json();
+        console.log('Fetched data:', result);
 
-        if (!result.success || !Array.isArray(result.updatedProjectData)) {
-          throw new Error(result.message || 'Invalid data structure');
+        if (!result.success) {
+          throw new Error(result.message || 'Failed to fetch data');
         }
+
+        // 檢查並使用正確的數據結構
+        const projectData = Array.isArray(result.data) ? result.data : [];
+        
+        console.log('Processed project data:', projectData);
 
         setProjectsData(prev => ({
           ...prev,
-          [currentProjectId]: result.updatedProjectData
+          [currentProjectId]: projectData
         }));
 
       } catch (err) {
@@ -282,60 +419,36 @@ export default function DesignerTab({
     fetchData();
   }, [currentProjectId]);
 
-  const handleStatusUpdate = async (index, isClosing) => {
-    try {
-      // 先更新前端狀態
-      const newData = [...data];
-      newData[index] = { 
-        ...newData[index], 
-        layoutClosed: isClosing,
-        lastModified: new Date().toISOString(),
-        modifiedBy: currentUser
-      };
-      
-      // 更新前端顯示
-      setProjectsData(prev => ({
-        ...prev,
-        [currentProjectId]: newData
-      }));
+  const handleCloseRow = (idx) => {
+    const updated = [...data];
+    updated[idx] = {
+      ...updated[idx],
+      layoutClosed: 1,  // 使用數字 1 代替 true
+      lastModified: new Date().toISOString(),
+      modifiedBy: currentUser
+    };
 
-      // 提交到後端
-      const response = await fetch(`${API_BASE_URL}/layouts/submit`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          projectId: currentProjectId,
-          data: newData,
-          userId: currentUser
-        })
-      });
+    // 只更新前端顯示
+    setProjectsData(prev => ({
+      ...prev,
+      [currentProjectId]: updated
+    }));
+  };
 
-      if (!response.ok) {
-        throw new Error('Failed to update status');
-      }
+  const handleReopenRow = (idx) => {
+    const updated = [...data];
+    updated[idx] = {
+      ...updated[idx],
+      layoutClosed: 0,  // 使用數字 0 代替 false
+      lastModified: new Date().toISOString(),
+      modifiedBy: currentUser
+    };
 
-      const result = await response.json();
-      
-      if (!result.success) {
-        throw new Error(result.message || 'Failed to update status');
-      }
-
-      // 更新前端狀態為後端返回的數據
-      setProjectsData(prev => ({
-        ...prev,
-        [currentProjectId]: result.updatedProjectData || []
-      }));
-
-      // 刷新所有分頁的數據
-      if (typeof refreshData === 'function') {
-        await refreshData();
-      }
-    } catch (err) {
-      console.error('Error updating status:', err);
-      alert(`Failed to update status: ${err.message}`);
-    }
+    // 只更新前端顯示
+    setProjectsData(prev => ({
+      ...prev,
+      [currentProjectId]: updated
+    }));
   };
 
   return (
@@ -602,7 +715,7 @@ export default function DesignerTab({
                       </div>
                       <div className="flex gap-2 justify-center">
                         <button
-                          onClick={() => handleStatusUpdate(idx, true)}
+                          onClick={() => handleCloseRow(idx)}
                           disabled={item.layoutClosed}
                           className={`flex-1 px-3 py-1.5 text-white rounded-md text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${item.layoutClosed ? 'line-through' : ''} ${
                             item.layoutClosed 
@@ -613,7 +726,7 @@ export default function DesignerTab({
                           Close
                         </button>
                         <button
-                          onClick={() => handleStatusUpdate(idx, false)}
+                          onClick={() => handleReopenRow(idx)}
                           disabled={!item.layoutClosed}
                           className={`flex-1 px-3 py-1.5 text-white rounded-md text-xs font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 no-underline ${
                             !item.layoutClosed 
@@ -626,6 +739,12 @@ export default function DesignerTab({
                       </div>
                     </div>
                   </td>
+                  {/* 新增錯誤提示 */}
+                  {invalidRows.includes(idx) && (
+                    <td colSpan="7" style={{ color: 'red', fontWeight: 'bold' }}>
+                      資料有誤，請檢查 IP Name 與 Mandays
+                    </td>
+                  )}
                 </tr>
               );
             })

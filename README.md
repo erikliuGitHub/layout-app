@@ -1,187 +1,142 @@
-# Layout Resource Plan System
+# LRPS — Layout Resource Plan System
 
-A web-based management tool for tracking and planning IC layout resource assignments, including schematic and layout milestones, designer ownership, and weekly workload visualization.
-
-## Features
-
-### Tabs
-
-* **Designer Tab**: Manage IP-level scheduling per designer
-* **Layout Leader Tab**: Assign layout ownership, split IPs, and view milestones
-* **Layout Tab**: Track weekly workload per layout owner and mark closure status
-* **Gantt Tab**: Visualize timelines of all IPs across weeks in a Gantt chart
-
-### Functions
-
-* CSV import/export
-* Dynamic Gantt rendering with weekly breakdowns
-* Weekly input of man-day contribution
-* IP duplication and deletion
-* Designer and Layout Owner filtering
-* Reopening closed tasks with audit tracking
+一個用於追蹤與規劃 IC 佈局資源分配的網頁系統，支援專案進度、設計師/佈局負責人管理、週工時統計與甘特圖視覺化。
 
 ---
-## Overview flowchart
-【前端流程】
-App.jsx (src/App.jsx)
-      │
-      ▼
-fetch('/api/layouts') → 後端 API 呼叫
-      │
-      ▼
-結果：response.json() → { success, message, data } 或直接 data
-      │
-      ▼
-for (const [projectId, rows] of Object.entries(data))  // 檢查每個專案資料
-      │
-      ▼
-rows.map(row => ({ ...row, status, plannedMandays }))  // 計算狀態與人日
-      │
-      ▼
-setProjectsData(dataWithStatus)  // 設定前端狀態
-      │
-      ▼
-呈現到 DesignerTab.jsx, LayoutLeaderTab.jsx, LayoutTab.jsx (src/components)
 
-【後端流程】
-app.js (backend/app.js)
-      │
-      ▼
-app.use('/api/layouts', layoutRoutes)  // 路由分發
-      │
-      ▼
-layoutRoutes.js (backend/routes/layoutRoutes.js)
-      │
-      ▼
-router.get('/layouts/:projectId', layoutController.getProjectLayouts)
-router.post('/submit', layoutController.submitBatchUpdate)
-router.post('/update', layoutController.updateTask)
-      │
-      ▼
-layoutController.js (backend/controllers/layoutController.js)
-      │
-      ▼
-getProjectLayouts → layoutTaskModel.getLayoutsByProject (backend/models/layoutTaskModel.js)
-submitBatchUpdate → layoutTaskModel.updateTask (多筆)
-updateTask → layoutTaskModel.updateTask (單筆)
-      │
-      ▼
-layoutTaskModel.js (backend/models/layoutTaskModel.js)
-      │
-      ▼
-執行 SQLite 資料查詢/更新
-      │
-      ▼
-返回結果給 controller → routes → 前端 fetch 接收
+## 目錄
+- [功能特色](#功能特色)
+- [系統架構與流程](#系統架構與流程)
+- [專案目錄結構](#專案目錄結構)
+- [快速啟動](#快速啟動)
+- [技術棧](#技術棧)
+- [團隊協作規範](#團隊協作規範)
+- [資料庫遷移/備份](#資料庫遷移備份)
+- [聯絡窗口](#聯絡窗口)
+- [License](#license)
 
-【資料來源】
-SQLite 資料庫 (backend/layout.db)
+---
 
-## File Structure Overview
+## 功能特色
+- **多分頁管理**：設計師、佈局負責人、週工時、甘特圖視覺化
+- **CSV 匯入/匯出**
+- **IP 任務分割、複製、刪除**
+- **週工時填報與統計**
+- **任務狀態追蹤、關閉/重開**
+- **動態過濾、搜尋、排序**
+- **資料庫版本控管**
+
+---
+
+## 系統架構與流程
+
+### 前端
+- React + Vite SPA
+- 主要元件：DesignerTab、LayoutLeaderTab、LayoutTab、GanttChart
+- 透過 fetch API 與後端溝通
+
+### 後端
+- Node.js + Express
+- RESTful API 提供資料 CRUD
+- SQLite（可遷移至 Oracle）
+- 主要檔案：app.js、routes/layoutRoutes.js、controllers/layoutController.js、models/layoutTaskModel.js
+
+### 資料流
+1. 前端發送 API 請求（如 /api/layouts/:projectId）
+2. 後端路由分發 → controller 處理邏輯 → model 操作資料庫
+3. 回傳 JSON 結果給前端，更新畫面
+
+---
+
+## 專案目錄結構
 
 ```
 my-layout-app-fixed/
-├── src/
-│   ├── App.jsx                 # Main application entry with routing and tab switching
-│   ├── index.css              # Global styles
-│   ├── components/
-│   │   ├── DesignerTab.jsx    # Designer tab UI and logic
-│   │   ├── LayoutLeaderTab.jsx# Layout Leader tab: owner assignment & IP split
-│   │   ├── LayoutTab.jsx      # Layout tab: weekly work reporting
-│   │   ├── GanttChart.jsx     # Gantt tab: visual scheduling overview
-│   │   └── SplitIpModal.jsx   # Modal UI for IP splitting feature
-│   ├── utils/
-│   │   ├── dateUtils.js       # Utility functions: date calculation, working days
-│   │   ├── ganttUtils.js      # ISO week helpers, Gantt bar calculations
-│   │   └── csvUtils.js        # CSV import/export parser helpers
+├── backend/                # 後端 Node.js/Express 專案
+│   ├── src/                # 主程式碼
+│   ├── routes/             # API 路由
+│   ├── controllers/        # 業務邏輯
+│   ├── models/             # 資料庫操作
+│   ├── migrations/         # 資料庫遷移腳本
+│   ├── layout.db           # SQLite 資料庫
+│   └── package.json
+├── frontend/               # 前端 React/Vite 專案
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── components/     # 主要元件
+│   │   ├── utils/          # 工具函式
+│   │   └── index.css
+│   ├── public/             # 靜態資源、字型、logo
+│   └── package.json
+└── README.md
 ```
-### Back-end
-###Back-end
-
-🔸 layoutRoutes.js
-	•	負責定義路由 (例如 /update, /submit, /layouts/:projectId)
-	•	每條路由會導向 layoutController.js 中對應的 controller 方法。
-
-🔸 layoutController.js
-	•	負責接收路由傳來的請求，執行對應的商業邏輯。
-	•	呼叫 layoutTaskModel.js 中的 model 方法來與 DB 互動，並返回結果給前端。
-
-🔸 layoutTaskModel.js
-	•	負責與資料庫 (SQLite) 直接互動 (查詢、更新、版本檢查)。
-	•	提供版本控制、資料 CRUD 功能，回傳結果供 controller 使用。
- 
-前端 (DesignerTab.jsx)
-    │
-    │ POST /api/layouts/submit { projectId, data[] }
-    ▼
-Express app (app.js)
-    │
-    │ app.use("/api/layouts", layoutRoutes)
-    ▼
-layoutRoutes.js
-    │
-    │ router.post("/submit", controller.submitBatchUpdate)
-    ▼
-layoutController.js
-    │
-    │ submitBatchUpdate(projectId, data[])
-    │ ├─ for each item in data[]:
-    │ │   └─ model.updateTask(id, version, updatedFields)
-    │ ├─ Promise.allSettled(updatePromises)
-    │ ├─ model.getLayoutsByProject(projectId) // 回傳最新專案資料
-    │ └─ res.json({ success, updatedData })
-    ▼
-layoutTaskModel.js
-    │
-    └─ db UPDATE layout_tasks SET fields... WHERE id=? AND version=?
-       ├─ 檢查版本
-       ├─ 更新資料
-       └─ 回傳更新結果 (含版本)
-
-前端 fetch -> /layouts/:projectId
-          |
-          V
-路由 layoutRoutes.js GET /layouts/:projectId
-          |
-          V
-控制器 layoutController.js getProjectLayouts
-          |
-          V
-模型 layoutTaskModel.js getLayoutsByProject (SQL 查詢)
-          |
-          V
-資料庫 SQLite (查詢結果 rows)
-          |
-          V
-控制器檢查 rows (回傳空陣列或資料)
-          |
-          V
-前端接收 (檢查陣列再 .map)
-
-## Sql command
-   SELECT * FROM layout_tasks WHERE project_id='PJT-2025-Alpha';
-
-## Development
-
-### Setup
-
-```bash
-npm install
-npm run dev
-```
-
-### Tech Stack
-
-* React
-* Vite
-* react-datepicker
 
 ---
 
-## Author
+## 快速啟動
 
-Developed by Erik Liu for internal layout resource planning.
+### 1. 安裝前端
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+- 預設啟動於 http://localhost:5173
+
+### 2. 安裝後端
+
+```bash
+cd backend
+npm install
+npm run dev
+```
+- 預設啟動於 http://localhost:3001
+
+### 3. 資料庫
+- 預設使用 SQLite（backend/layout.db）
+- 可依需求遷移至 Oracle，詳見 `docs/database-migration.md`
+
+---
+
+## 技術棧
+
+- 前端：React, Vite, Tailwind CSS, Radix UI, dayjs, papaparse
+- 後端：Node.js, Express, SQLite, dotenv
+- 其他：ESLint, Prettier, Docker（可選）
+
+---
+
+## 團隊協作規範
+
+- **Git 分支策略**：main（穩定）、dev（開發）、feature/xxx、bugfix/xxx
+- **Commit message**：語意化（feat: 新功能、fix: 修 bug、docs: 文件...）
+- **Pull Request**：需經 code review
+- **程式碼風格**：統一用 Prettier/ESLint，自動格式化
+- **Issue 回報**：請詳述重現步驟、預期/實際結果
+
+---
+
+## 資料庫遷移/備份
+
+- 請參考 `docs/database-migration.md`  
+- 提供 SQLite 匯出、Oracle 遷移腳本、備份/還原流程
+
+---
+
+## 聯絡窗口
+
+- **專案建立者（Creator）**：Erik Liu  
+- **主要貢獻者（Contributors）**：  
+  - 請於後續版本依實際參與人員補充
+- **聯絡方式**：請洽公司內部協作平台或專案負責人
+
+---
 
 ## License
 
-MIT (or customize for your internal use)
+MIT（或依公司內部規範調整）
+
+---
+
+如需更詳細的 API、資料庫、元件說明，請參考 docs/ 目錄下的文件。
