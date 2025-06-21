@@ -1,11 +1,19 @@
 {
   "dependencies": {
+    "@tailwindcss/postcss": "^4.1.10",
+    "@vitejs/plugin-react": "^4.5.2",
+    "autoprefixer": "^10.4.21",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "dotenv": "^16.5.0",
     "joi": "^17.13.3",
     "knex": "^3.1.0",
-    "oracledb": "^6.8.0"
-  },
-  "devDependencies": {
-    "db-migrate": "^0.11.14"
+    "lucide-react": "^0.519.0",
+    "oracledb": "^6.8.0",
+    "papaparse": "^5.5.3",
+    "postcss": "^8.5.6",
+    "react-datepicker": "^8.4.0",
+    "tailwind-merge": "^3.3.1",
+    "tailwindcss": "^4.1.10"
   }
 }
