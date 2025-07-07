@@ -4,8 +4,7 @@ import "react-datepicker/dist/react-datepicker.css";
 import { calculateEndDate, calculateMandays } from "../utils/dateUtils";
 import { calculateStatus } from "../utils/statusUtils";
 import { ThemeToggle } from "./ThemeToggle";
-
-const API_BASE_URL = 'http://localhost:3001/api';
+import { API_BASE_URL } from "../config";
 
 // 狀態標籤樣式
 const statusStyles = {

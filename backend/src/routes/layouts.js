@@ -1,5 +1,6 @@
 import express from 'express';
 import { executeQuery, executeUpdate } from '../config/db.js';
+import * as db from '../config/db.js'; // Re-adding the missing import for db
 import { v4 as uuidv4 } from 'uuid';
 import Joi from 'joi';
 
@@ -242,275 +243,137 @@ const validateDate = (dateStr) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : null;
 };
 
-// 提交更新
+// 提交更新 (已重構為使用 MERGE)
 router.post('/submit', async (req, res) => {
-  const { projectId, data, userId, role } = req.body;
-  // 只保留主要 log
-  console.log('POST /submit - Updating layouts', { projectId, userId, role, dataLength: data?.length });
+  const { projectId, data, userId, role, itemsToDelete } = req.body;
+  console.log('POST /submit - Updating layouts', { projectId, userId, role, dataLength: data?.length, itemsToDeleteLength: itemsToDelete?.length });
 
-  if (!projectId || !Array.isArray(data)) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid request data'
-    });
+  if (!projectId || (!Array.isArray(data) && !Array.isArray(itemsToDelete))) {
+    return res.status(400).json({ success: false, message: 'Invalid request data' });
   }
 
-  // schema 驗證
-  for (const [i, item] of data.entries()) {
-    const { error } = layoutSchema.validate(item);
-    if (error) {
-      return res.status(400).json({
-        success: false,
-        message: `Row ${i + 1} 資料格式錯誤: ${error.message}`,
-        row: i + 1,
-        item
-      });
-    }
-  }
-
+  const connection = await db.getConnection();
   try {
-    // 先查詢現有資料
-    const existingResult = await executeQuery(
-      'SELECT * FROM layout_tasks WHERE project_id = :projectId',
-      { projectId }
-    );
-    const existingRows = existingResult.rows;
+    console.log("Transaction started.");
 
-    // 工具函數：安全 stringify，遇到 circular structure 會 fallback 並 log
-    function safeStringify(val, fallback = '[]', context = '') {
-      try {
-        return JSON.stringify(val);
-      } catch (e) {
-        console.error(`safeStringify error at ${context}:`, e, val);
-        return fallback;
+    // Handle deletions first
+    if (Array.isArray(itemsToDelete) && itemsToDelete.length > 0) {
+      console.log('Processing deletions for project:', projectId, 'items:', itemsToDelete);
+      for (const ipName of itemsToDelete) {
+        try {
+          // Delete from LAYOUT_WEEKLY_WEIGHTS first (child table)
+          await connection.execute(`
+            DELETE FROM LAYOUT_WEEKLY_WEIGHTS
+            WHERE LAYOUT_ID = (SELECT ID FROM LAYOUT_TASKS WHERE PROJECT_ID = :projectId AND IP_NAME = :ipName)
+          `, { projectId, ipName });
+          console.log(`Deleted weekly weights for ${ipName}`);
+
+          // Then delete from LAYOUT_TASKS (parent table)
+          await connection.execute(`
+            DELETE FROM LAYOUT_TASKS
+            WHERE PROJECT_ID = :projectId AND IP_NAME = :ipName
+          `, { projectId, ipName });
+          console.log(`Deleted layout task ${ipName}`);
+        } catch (deleteErr) {
+          console.error(`Error deleting item ${ipName}:`, deleteErr);
+          // Depending on requirements, you might want to continue or throw here
+          // For now, re-throw to ensure transaction rollback on any deletion error
+          throw deleteErr;
+        }
       }
     }
 
-    // 工具函數：將 Oracle LOB 轉為字串
-    function lobToString(lob) {
-      if (!lob) return '';
-      if (typeof lob === 'string') return lob;
-      if (Buffer.isBuffer(lob)) return lob.toString();
-      if (typeof lob === 'object' && typeof lob.getData === 'function') {
-        return lob.getData();
-      }
-      if (typeof lob === 'object' && lob.toString) {
-        return lob.toString();
-      }
-      return '';
-    }
-
-    // 準備更新語句（移除 weekly_weights 欄位）
-    const updateSQL = `
-      UPDATE layout_tasks SET
-        designer = :designer,
-        layout_owner = :layout_owner,
-        schematic_freeze = CASE 
-          WHEN :schematic_freeze IS NULL THEN NULL 
-          ELSE TO_DATE(:schematic_freeze, 'YYYY-MM-DD')
-        END,
-        lvs_clean = CASE 
-          WHEN :lvs_clean IS NULL THEN NULL 
-          ELSE TO_DATE(:lvs_clean, 'YYYY-MM-DD')
-        END,
-        layout_leader_schematic_freeze = CASE 
-          WHEN :layout_leader_schematic_freeze IS NULL THEN NULL 
-          ELSE TO_DATE(:layout_leader_schematic_freeze, 'YYYY-MM-DD')
-        END,
-        layout_leader_lvs_clean = CASE 
-          WHEN :layout_leader_lvs_clean IS NULL THEN NULL 
-          ELSE TO_DATE(:layout_leader_lvs_clean, 'YYYY-MM-DD')
-        END,
-        planned_mandays = :planned_mandays,
-        actual_hours = :actual_hours,
-        version = :version,
-        rework_note = :rework_note,
-        layout_closed = :layout_closed,
-        modified_by = :modified_by,
-        last_modified = CURRENT_TIMESTAMP
-      WHERE project_id = :project_id AND ip_name = :ip_name
+    const mergeSql = `
+      MERGE INTO layout_tasks t
+      USING (SELECT :p_project_id AS project_id, :p_ip_name AS ip_name FROM dual) s
+      ON (t.project_id = s.project_id AND t.ip_name = s.ip_name)
+      WHEN MATCHED THEN
+        UPDATE SET
+          designer = :p_designer,
+          layout_owner = :p_layout_owner,
+          schematic_freeze = CASE WHEN :p_schematic_freeze IS NULL THEN NULL ELSE TO_DATE(:p_schematic_freeze, 'YYYY-MM-DD') END,
+          lvs_clean = CASE WHEN :p_lvs_clean IS NULL THEN NULL ELSE TO_DATE(:p_lvs_clean, 'YYYY-MM-DD') END,
+          layout_leader_schematic_freeze = CASE WHEN :p_layout_leader_schematic_freeze IS NULL THEN NULL ELSE TO_DATE(:p_layout_leader_schematic_freeze, 'YYYY-MM-DD') END,
+          layout_leader_lvs_clean = CASE WHEN :p_layout_leader_lvs_clean IS NULL THEN NULL ELSE TO_DATE(:p_layout_leader_lvs_clean, 'YYYY-MM-DD') END,
+          planned_mandays = :p_planned_mandays,
+          version = t.version + 1,
+          layout_closed = :p_layout_closed,
+          modified_by = :p_modified_by,
+          last_modified = CURRENT_TIMESTAMP
+      WHEN NOT MATCHED THEN
+        INSERT (
+          project_id, ip_name, designer, layout_owner,
+          schematic_freeze, lvs_clean, layout_leader_schematic_freeze,
+          layout_leader_lvs_clean, planned_mandays, version, layout_closed,
+          modified_by, last_modified
+        ) VALUES (
+          :p_project_id, :p_ip_name, :p_designer, :p_layout_owner,
+          CASE WHEN :p_schematic_freeze IS NULL THEN NULL ELSE TO_DATE(:p_schematic_freeze, 'YYYY-MM-DD') END,
+          CASE WHEN :p_lvs_clean IS NULL THEN NULL ELSE TO_DATE(:p_lvs_clean, 'YYYY-MM-DD') END,
+          CASE WHEN :p_layout_leader_schematic_freeze IS NULL THEN NULL ELSE TO_DATE(:p_layout_leader_schematic_freeze, 'YYYY-MM-DD') END,
+          CASE WHEN :p_layout_leader_lvs_clean IS NULL THEN NULL ELSE TO_DATE(:p_layout_leader_lvs_clean, 'YYYY-MM-DD') END,
+          :p_planned_mandays, 1, :p_layout_closed, :p_modified_by, CURRENT_TIMESTAMP
+        )
     `;
 
-    // 順序執行所有更新
-    for (const [idx, item] of data.entries()) {
-      if (!item || !item.ip_name) {
-        console.warn(`跳過第 ${idx} 筆: item 為 undefined 或 ip_name 缺失`, item);
-        continue;
-      }
-      // 僅用 DB 查到的 id，不用 uuidv4() 或前端傳來的 id
-      const existingRow = existingRows.find(row => row.IP_NAME === item.ip_name);
-      let rowId = existingRow?.ID;
-      if (!rowId) {
-        console.error(`找不到對應的 id: project_id=${projectId}, ip_name=${item.ip_name}`);
-        continue; // 找不到 id 就不做 MERGE
-      }
-      // 查詢 MERGE 前 lvs_clean
-      try {
-        const beforeResult = await executeQuery(
-          'SELECT lvs_clean FROM layout_tasks WHERE project_id = :projectId AND ip_name = :ipName',
-          { projectId, ipName: item.ip_name }
-        );
-        console.log(`[BEFORE MERGE] ip_name=${item.ip_name}, lvs_clean=`, beforeResult.rows?.[0]?.LVS_CLEAN || null);
-      } catch (e) {
-        console.error(`[BEFORE MERGE] 查詢失敗 ip_name=${item.ip_name}:`, e);
-      }
-      
-      // 驗證所有日期
-      try {
-        console.log('=== BEFORE MERGE ===', { idx, ip_name: item.ip_name });
-        const schematicFreezeDate = validateDate(item.schematic_freeze);
-        const lvsCleanDate = validateDate(item.lvs_clean);
-        const layoutLeaderSchematicFreezeDate = validateDate(item.layout_leader_schematic_freeze);
-        const layoutLeaderLvsCleanDate = validateDate(item.layout_leader_lvs_clean);
-        console.log('updateParams 日期欄位:', {
-          schematicFreezeDate,
-          lvsCleanDate,
-          layoutLeaderSchematicFreezeDate,
-          layoutLeaderLvsCleanDate
-        });
-        // 檢查 actual_hours/weekly_weights 型別
-        if (role === 'designer' && item.actual_hours !== undefined && !isPlainObjectOrArray(item.actual_hours)) {
-          console.error('actual_hours 不是純物件或陣列:', item.actual_hours);
-        }
-        if (role === 'designer' && item.weekly_weights !== undefined && !isPlainObjectOrArray(item.weekly_weights)) {
-          console.error('weekly_weights 不是純物件或陣列:', item.weekly_weights);
-        }
-        // 只傳 UPDATE 會用到的欄位
-        const updateParams = {
-          project_id: projectId,
-          ip_name: item.ip_name,
-          designer: item.designer,
-          layout_owner: item.layout_owner,
-          schematic_freeze: schematicFreezeDate,
-          lvs_clean: lvsCleanDate,
-          layout_leader_schematic_freeze: layoutLeaderSchematicFreezeDate,
-          layout_leader_lvs_clean: layoutLeaderLvsCleanDate,
-          planned_mandays: isNaN(Number(item.planned_mandays)) ? 0 : Number(item.planned_mandays),
-          actual_hours: (role === 'designer' && item.actual_hours !== undefined)
-            ? safeStringify(item.actual_hours, '[]', `actual_hours for ${item.ip_name}`)
-            : (typeof existingRow?.ACTUAL_HOURS === 'string' ? existingRow.ACTUAL_HOURS : '[]'),
-          version: isNaN(Number(item.version)) ? 1 : Number(item.version),
-          rework_note: item.rework_note || '',
-          layout_closed: isNaN(Number(item.layout_closed)) ? 0 : Number(item.layout_closed),
-          modified_by: userId
-        };
-        // 只保留簡化 merge log
-        const updateResult = await executeUpdate(updateSQL, updateParams);
-        console.log(`[MERGE] ip_name=${item.ip_name}, lvs_clean=${updateParams.lvs_clean}, rowsAffected=${updateResult?.rowsAffected}`);
-        // 查詢 MERGE 後 lvs_clean
-        try {
-          const afterResult = await executeQuery(
-            'SELECT lvs_clean FROM layout_tasks WHERE project_id = :projectId AND ip_name = :ipName',
-            { projectId, ipName: item.ip_name }
-          );
-          console.log(`[AFTER MERGE] ip_name=${item.ip_name}, lvs_clean=`, afterResult.rows?.[0]?.LVS_CLEAN || null);
-        } catch (e) {
-          console.error(`[AFTER MERGE] 查詢失敗 ip_name=${item.ip_name}:`, e);
-        }
-        console.log('=== AFTER MERGE ===', { idx, ip_name: item.ip_name, rowsAffected: updateResult?.rowsAffected, updateResult });
-      } catch (err) {
-        console.error('ERROR in MERGE for', item?.ip_name, ':', err);
-        throw err;
-      }
-      // === 新增：同步 upsert 到 LAYOUT_WEEKLY_WEIGHTS ===
-      let weeklyWeightsArr = [];
-      try {
-        weeklyWeightsArr = typeof item.weekly_weights === 'string'
-          ? JSON.parse(item.weekly_weights)
-          : Array.isArray(item.weekly_weights) ? item.weekly_weights : [];
-      } catch (e) {
-        console.error('weekly_weights parse error:', e, item.weekly_weights);
-        weeklyWeightsArr = [];
-      }
-      if (rowId && weeklyWeightsArr.length > 0) {
-        for (const w of weeklyWeightsArr) {
-          try {
-            // log 欄位內容與型別
-            console.log('即將 upsert:', {
-              layoutId: rowId,
-              week: w.week,
-              weight: w.value,
-              weightType: typeof w.value,
-              weightParsed: parseFloat(w.value),
-              weightParsedType: typeof parseFloat(w.value)
-            });
-            // log SQL 與參數
-            const updateSQL = `UPDATE LAYOUT_WEEKLY_WEIGHTS SET
-              WEIGHT = :weight,
-              UPDATED_AT = CURRENT_TIMESTAMP,
-              UPDATED_BY = :updatedBy,
-              ROLE = :role,
-              VERSION = NVL(VERSION,0) + 1
-            WHERE LAYOUT_ID = :layoutId AND WEEK = :week`;
-            const insertSQL = `INSERT INTO LAYOUT_WEEKLY_WEIGHTS
-              (LAYOUT_ID, WEEK, WEIGHT, UPDATED_AT, UPDATED_BY, ROLE, VERSION)
-             VALUES
-              (:layoutId, :week, :weight, CURRENT_TIMESTAMP, :updatedBy, :role, 1)`;
-            // 先查有沒有該週
-            const exist = await executeQuery(
-              'SELECT * FROM LAYOUT_WEEKLY_WEIGHTS WHERE LAYOUT_ID = :layoutId AND WEEK = :week',
-              { layoutId: rowId, week: w.week }
-            );
-            if (exist.rows && exist.rows.length > 0) {
-              console.log('[WEEKLY_WEIGHT][UPDATE]', updateSQL, {
-                layoutId: rowId,
-                week: w.week,
-                weight: parseFloat(w.value),
-                updatedBy: w.updatedBy,
-                role: w.role
-              });
-              const updateResult = await executeUpdate(
-                updateSQL,
-                {
-                  layoutId: rowId,
-                  week: w.week,
-                  weight: parseFloat(w.value),
-                  updatedBy: w.updatedBy,
-                  role: w.role
-                }
-              );
-              console.log('[WEEKLY_WEIGHT][UPDATE][rowsAffected]', updateResult?.rowsAffected);
-            } else {
-              console.log('[WEEKLY_WEIGHT][INSERT]', insertSQL, {
-                layoutId: rowId,
-                week: w.week,
-                weight: parseFloat(w.value),
-                updatedBy: w.updatedBy,
-                role: w.role
-              });
-              const insertResult = await executeUpdate(
-                insertSQL,
-                {
-                  layoutId: rowId,
-                  week: w.week,
-                  weight: parseFloat(w.value),
-                  updatedBy: w.updatedBy,
-                  role: w.role
-                }
-              );
-              console.log('[WEEKLY_WEIGHT][INSERT][rowsAffected]', insertResult?.rowsAffected);
-            }
-          } catch (err) {
-            console.error('Upsert weekly_weight error:', err, w);
-            if (err && err.stack) console.error(err.stack);
-            continue;
+    if (Array.isArray(data)) {
+      for (const item of data) {
+        // Helper function for robust date handling
+        const getValidDateString = (date) => {
+          if (date && typeof date === 'string' && date.length >= 10) {
+            return date.substring(0, 10);
           }
+          return null;
+        };
+
+        const params = {
+          p_project_id: projectId,
+          p_ip_name: item.ip_name,
+          p_designer: item.designer?.trim() || '',
+          p_layout_owner: item.layout_owner || null,
+          p_schematic_freeze: getValidDateString(item.schematic_freeze),
+          p_lvs_clean: getValidDateString(item.lvs_clean),
+          p_layout_leader_schematic_freeze: getValidDateString(item.layout_leader_schematic_freeze),
+          p_layout_leader_lvs_clean: getValidDateString(item.layout_leader_lvs_clean),
+          p_planned_mandays: (item.planned_mandays || 0),
+          p_layout_closed: isNaN(Number(item.layout_closed)) ? 0 : Number(item.layout_closed),
+          p_modified_by: userId || 'system'
+        };
+
+        try {
+          await connection.execute(mergeSql, params);
+        } catch (loopErr) {
+          console.error(`Error merging item ${item.ip_name}:`, loopErr); // Changed item.ipName to item.ip_name
+          throw loopErr; // Re-throw to be caught by the outer catch
         }
       }
-      // === END upsert weekly_weights ===
     }
 
-    res.json({
-      success: true,
-      message: 'Data updated successfully'
-    });
+    await connection.commit();
+    console.log("Transaction committed successfully.");
+    res.json({ success: true, message: 'Data updated successfully' });
+
   } catch (err) {
-    console.error('Error updating data:', err);
-    res.status(500).json({
-      success: false,
-      message: 'Database error',
-      error: err.message
-    });
+    console.error('Database error:', err);
+    // Rollback transaction on error
+    if (connection) {
+      try {
+        await connection.rollback();
+        console.log("Transaction rolled back.");
+      } catch (rollbackErr) {
+        console.error("Error rolling back transaction:", rollbackErr);
+      }
+    }
+    res.status(500).json({ success: false, message: 'Database error: ' + err.message });
+  } finally {
+    if (connection) {
+      try {
+        await connection.close();
+        console.log("Connection closed.");
+      } catch (closeErr) {
+        console.error("Error closing connection:", closeErr);
+      }
+    }
   }
 });
 
@@ -635,9 +498,9 @@ router.post('/update-weight', async (req, res) => {
           week: row.WEEK,
           value: parseFloat(row.WEIGHT_VALUE),
           updatedAt: row.WEIGHT_UPDATED_AT,
-          updatedBy: row.WEIGHT_UPDATED_BY,
-          role: row.WEIGHT_ROLE,
-          version: row.WEIGHT_VERSION
+          updatedBy: row.UPDATED_BY,
+          role: row.ROLE,
+          version: row.VERSION
         });
       }
     });
@@ -707,4 +570,4 @@ router.get('/weight-history', async (req, res) => {
   }
 });
 
-export default router; 
+export default router;

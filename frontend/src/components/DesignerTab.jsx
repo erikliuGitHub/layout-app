@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-// Set API base URL from env or fallback
-const API_BASE_URL = 'http://localhost:3001/api';
+import { API_BASE_URL } from '../config';
 console.log("API Base URL:", API_BASE_URL);
 import Papa from "papaparse";
 import DatePicker from "react-datepicker";
@@ -32,6 +31,26 @@ export default function DesignerTab({
   const [error, setError] = useState(null);
   const [invalidRows, setInvalidRows] = useState([]);
 
+  const [splitModalOpen, setSplitModalOpen] = useState(false);
+  const [itemToSplit, setItemToSplit] = useState(null);
+  const [pendingSplitItems, setPendingSplitItems] = useState([]);
+  const [itemsToDelete, setItemsToDelete] = useState([]); // New state for deferred deletions
+
+  const handleFieldChange = (id, field, value) => {
+    const updateList = (list) => list.map(item => (item._id === id ? { ...item, [field]: value } : item));
+
+    const itemToUpdate = [...(projectsData[currentProjectId] || []), ...pendingSplitItems].find(item => item._id === id);
+
+    if (itemToUpdate?.isPending) {
+        setPendingSplitItems(updateList);
+    } else {
+        setProjectsData(prev => ({
+            ...prev,
+            [currentProjectId]: updateList(prev[currentProjectId] || [])
+        }));
+    }
+  };
+
   // 計算工作日的函數（全域可用）
   function calcBusinessDays(startDate, endDate) {
     let count = 0;
@@ -56,11 +75,13 @@ export default function DesignerTab({
 
   // Always use latest projectsData for sortedData, and recalc status on each render
   const sortedData = React.useMemo(() => {
-    // Always use up-to-date data from projectsData for currentProjectId
-    const dataSource = Array.isArray(projectsData?.[currentProjectId]) ? projectsData[currentProjectId] : [];
-    
+    const existingData = Array.isArray(projectsData?.[currentProjectId]) ? projectsData[currentProjectId] : [];
+    // Filter out items that are marked for deletion
+    const filteredExistingData = existingData.filter(item => !itemsToDelete.includes(item.ipName));
+    const combinedData = [...filteredExistingData, ...pendingSplitItems]; // Combine existing and pending
+
     // Add status and plannedMandays
-    const enriched = dataSource.map(item => {
+    const enriched = combinedData.map(item => { // Use combinedData here
       const schematicDate = item.schematicFreeze ? new Date(item.schematicFreeze) : null;
       const lvsCleanDate = item.lvsClean ? new Date(item.lvsClean) : null;
       const today = new Date();
@@ -84,7 +105,7 @@ export default function DesignerTab({
         ? String(valA).localeCompare(String(valB))
         : String(valB).localeCompare(String(valA));
     });
-  }, [projectsData, currentProjectId, sortConfig]);
+  }, [projectsData, currentProjectId, sortConfig, pendingSplitItems, itemsToDelete]); // Add itemsToDelete to dependencies
 
   const handleCopy = (index) => {
     try {
@@ -98,6 +119,7 @@ export default function DesignerTab({
       const { status, ...itemWithoutStatus } = sortedData[index];
       const copiedItem = {
         ...itemWithoutStatus,
+        _id: `copied_${Date.now()}`,
         lastModified: new Date().toISOString(),
         modifiedBy: currentUser,
         version: "1"
@@ -184,7 +206,11 @@ export default function DesignerTab({
 
   const handleSubmit = async () => {
     try {
-      const dataSource = Array.isArray(projectsData?.[currentProjectId]) ? projectsData[currentProjectId] : [];
+      const existingData = Array.isArray(projectsData?.[currentProjectId]) ? projectsData[currentProjectId] : [];
+      // Filter out items that are marked for deletion from the existing data before combining
+      const dataToSubmit = existingData.filter(item => !itemsToDelete.includes(item.ipName));
+      const dataSource = [...dataToSubmit, ...pendingSplitItems]; // Combine existing (not deleted) and pending for submission
+
       // enrich 一次資料，強制格式化日期
       const enriched = dataSource.map(item => {
         const schematicFreeze = toDateString(item.schematicFreeze);
@@ -232,8 +258,8 @@ export default function DesignerTab({
       }
       setInvalidRows([]);
       
-      if (!dataSource.length) {
-        alert('No data to submit');
+      if (!dataSource.length && !itemsToDelete.length) { // Check if there's anything to submit or delete
+        alert('No data to submit or delete');
         return;
       }
 
@@ -298,6 +324,7 @@ export default function DesignerTab({
         body: JSON.stringify({
           projectId: currentProjectId,
           data: formattedData,
+          itemsToDelete: itemsToDelete, // Send items to delete
           userId: currentUser,
           role: 'designer'
         })
@@ -306,7 +333,7 @@ export default function DesignerTab({
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Server response:', errorText);
-        throw new Error(`Server error: ${response.status} - ${errorText}`);
+        throw new Error(`Server error: ${error.status} - ${errorText}`);
       }
 
       const result = await response.json();
@@ -320,6 +347,8 @@ export default function DesignerTab({
         ...prev,
         [currentProjectId]: result.data || []
       }));
+      setPendingSplitItems([]); // Clear pending items after successful submission
+      setItemsToDelete([]); // Clear items to delete after successful submission
 
       await refreshData();
 
@@ -331,47 +360,22 @@ export default function DesignerTab({
     }
   };
 
-  const handleDelete = async (index) => {
+  const handleDelete = (itemToDelete) => { // Make it synchronous, actual deletion happens on submit
     if (!confirm('Are you sure you want to delete this item?')) {
       return;
     }
 
-    setLoading(true);
-    setError(null);
-
-    try {
-      const newData = [...data];
-      newData.splice(index, 1);
-
-      // 發送更新到後端
-      const response = await fetch(`${API_BASE_URL}/layouts/submit`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          projectId: currentProjectId,
-          data: newData
-        })
-      });
-
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || 'Failed to delete item');
-      }
-
-      // 更新前端狀態
+    // If it's a pending item, just remove it from the pendingSplitItems state
+    if (itemToDelete.isPending) {
+      setPendingSplitItems(prev => prev.filter(item => item._id !== itemToDelete._id));
+    } else {
+      // If it's an existing item, add its IP name to itemsToDelete
+      setItemsToDelete(prev => [...prev, itemToDelete.ipName]);
+      // Also remove it from the current projectsData view immediately
       setProjectsData(prev => ({
         ...prev,
-        [currentProjectId]: newData
+        [currentProjectId]: prev[currentProjectId].filter(item => item._id !== itemToDelete._id)
       }));
-
-    } catch (err) {
-      console.error('Error deleting item:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -398,8 +402,13 @@ export default function DesignerTab({
           throw new Error(result.message || 'Failed to fetch data');
         }
 
-        // 檢查並使用正確的數據結構
-        const projectData = Array.isArray(result.data) ? result.data : [];
+        // 檢查並使用正確的數據結構，並加上穩定的 _id
+        const projectData = (Array.isArray(result.data) ? result.data : []).map(
+            (item, index) => ({
+                ...item,
+                _id: item.id || `loaded_${item.ipName}_${index}`
+            })
+        );
         
         console.log('Processed project data:', projectData);
 
@@ -419,36 +428,36 @@ export default function DesignerTab({
     fetchData();
   }, [currentProjectId]);
 
-  const handleCloseRow = (idx) => {
-    const updated = [...data];
-    updated[idx] = {
-      ...updated[idx],
-      layoutClosed: 1,  // 使用數字 1 代替 true
-      lastModified: new Date().toISOString(),
-      modifiedBy: currentUser
-    };
-
-    // 只更新前端顯示
-    setProjectsData(prev => ({
-      ...prev,
-      [currentProjectId]: updated
-    }));
+  const handleCloseRow = (id) => {
+    handleFieldChange(id, 'layoutClosed', 1);
+    handleFieldChange(id, 'lastModified', new Date().toISOString());
+    handleFieldChange(id, 'modifiedBy', currentUser);
   };
 
-  const handleReopenRow = (idx) => {
-    const updated = [...data];
-    updated[idx] = {
-      ...updated[idx],
-      layoutClosed: 0,  // 使用數字 0 代替 false
-      lastModified: new Date().toISOString(),
-      modifiedBy: currentUser
-    };
+  const handleReopenRow = (id) => {
+    handleFieldChange(id, 'layoutClosed', 0);
+    handleFieldChange(id, 'lastModified', new Date().toISOString());
+    handleFieldChange(id, 'modifiedBy', currentUser);
+  };
 
-    // 只更新前端顯示
-    setProjectsData(prev => ({
-      ...prev,
-      [currentProjectId]: updated
-    }));
+  const handleSplitConfirm = (splitCount) => {
+    if (!itemToSplit) return;
+
+    const newEntries = [];
+    for (let i = 1; i <= splitCount; i++) {
+      newEntries.push({
+        ...itemToSplit,
+        _id: `split_${itemToSplit._id}_part${i}`,
+        ipName: `${itemToSplit.ipName}_part${i}`,
+        parentIp: itemToSplit.ipName,
+        layoutClosed: 0,
+        isPending: true, // Mark as pending
+      });
+    }
+
+    setPendingSplitItems(prev => [...prev, ...newEntries]);
+    setSplitModalOpen(false);
+    setItemToSplit(null);
   };
 
   return (
@@ -482,6 +491,7 @@ export default function DesignerTab({
               setProjectsData(prev => ({
                 ...prev,
                 [newName]: [{
+                  _id: `new_${Date.now()}`,
                   ipName: "",
                   designer: "",
                   schematicFreeze: "",
@@ -555,7 +565,7 @@ export default function DesignerTab({
       <table className="w-full border-collapse bg-card text-card-foreground">
         <thead>
           <tr>
-            <th style={{ minWidth: "160px", maxWidth: "160px", textAlign: "center" }} onClick={() => handleSort("ipName")}>
+            <th style={{ minWidth: "200px", maxWidth: "200px", textAlign: "center" }} onClick={() => handleSort("ipName")}>
               IP Name {sortConfig.key === "ipName" && (sortConfig.direction === "asc" ? "▲" : "▼")}
             </th>
             <th style={{ minWidth: "160px", maxWidth: "160px", textAlign: "center" }} onClick={() => handleSort("designer")}>
@@ -604,33 +614,19 @@ export default function DesignerTab({
               }
 
               return (
-                <tr key={idx} className={rowClass}>
+                <tr key={item._id} className={`${rowClass} ${item.isPending ? 'bg-blue-50' : ''}`}>
                   <td className="p-2 text-center">
                     <input
                       type="text"
                       value={item.ipName || ""}
-                      onChange={(e) => {
-                        const newData = [...data];
-                        newData[idx] = { ...newData[idx], ipName: e.target.value };
-                        setProjectsData(prev => ({
-                          ...prev,
-                          [currentProjectId]: newData
-                        }));
-                      }}
+                      onChange={(e) => handleFieldChange(item._id, "ipName", e.target.value)}
                       className={`w-full px-2 py-1 rounded border border-border bg-card text-card-foreground ${item.layoutClosed ? 'line-through' : ''}`}
                     />
                   </td>
                   <td className="p-2 text-center">
                     <select
                       value={item.designer || ""}
-                      onChange={(e) => {
-                        const newData = [...data];
-                        newData[idx] = { ...newData[idx], designer: e.target.value };
-                        setProjectsData(prev => ({
-                          ...prev,
-                          [currentProjectId]: newData
-                        }));
-                      }}
+                      onChange={(e) => handleFieldChange(item._id, "designer", e.target.value)}
                       className={`w-full px-2 py-1 rounded border border-border bg-card text-card-foreground ${item.layoutClosed ? 'line-through' : ''}`}
                     >
                       <option value="">Select Designer</option>
@@ -642,17 +638,7 @@ export default function DesignerTab({
                   <td className="p-2 text-center">
                     <DatePicker
                       selected={item.schematicFreeze ? new Date(item.schematicFreeze) : null}
-                      onChange={(date) => {
-                        const newData = [...data];
-                        newData[idx] = {
-                          ...newData[idx],
-                          schematicFreeze: date ? date.toISOString().split('T')[0] : null
-                        };
-                        setProjectsData(prev => ({
-                          ...prev,
-                          [currentProjectId]: newData
-                        }));
-                      }}
+                      onChange={(date) => handleFieldChange(item._id, "schematicFreeze", date ? date.toISOString().split('T')[0] : null)}
                       dateFormat="yyyy-MM-dd"
                       placeholderText="Select date"
                       customInput={
@@ -663,17 +649,7 @@ export default function DesignerTab({
                   <td className="p-2 text-center">
                     <DatePicker
                       selected={item.lvsClean ? new Date(item.lvsClean) : null}
-                      onChange={(date) => {
-                        const newData = [...data];
-                        newData[idx] = {
-                          ...newData[idx],
-                          lvsClean: date ? date.toISOString().split('T')[0] : null
-                        };
-                        setProjectsData(prev => ({
-                          ...prev,
-                          [currentProjectId]: newData
-                        }));
-                      }}
+                      onChange={(date) => handleFieldChange(item._id, "lvsClean", date ? date.toISOString().split('T')[0] : null)}
                       dateFormat="yyyy-MM-dd"
                       placeholderText="Select date"
                       customInput={
@@ -707,7 +683,7 @@ export default function DesignerTab({
                           Copy
                         </button>
                         <button
-                          onClick={() => handleDelete(idx)}
+                          onClick={() => handleDelete(item)}
                           className={`flex-1 px-3 py-1.5 bg-red-500 text-white rounded-md text-xs font-medium transition-colors hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 ${item.layoutClosed ? 'line-through' : ''}`}
                         >
                           Delete
@@ -715,7 +691,7 @@ export default function DesignerTab({
                       </div>
                       <div className="flex gap-2 justify-center">
                         <button
-                          onClick={() => handleCloseRow(idx)}
+                          onClick={() => handleCloseRow(item._id)}
                           disabled={item.layoutClosed}
                           className={`flex-1 px-3 py-1.5 text-white rounded-md text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 ${item.layoutClosed ? 'line-through' : ''} ${
                             item.layoutClosed 
@@ -726,7 +702,7 @@ export default function DesignerTab({
                           Close
                         </button>
                         <button
-                          onClick={() => handleReopenRow(idx)}
+                          onClick={() => handleReopenRow(item._id)}
                           disabled={!item.layoutClosed}
                           className={`flex-1 px-3 py-1.5 text-white rounded-md text-xs font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 no-underline ${
                             !item.layoutClosed 
@@ -760,6 +736,7 @@ export default function DesignerTab({
           className="bg-primary text-primary-foreground px-4 py-2 rounded font-semibold hover:bg-primary/90 shadow"
           onClick={() => {
             const newRow = {
+              _id: `new_${Date.now()}`,
               ipName: "",
               designer: "",
               schematicFreeze: "",

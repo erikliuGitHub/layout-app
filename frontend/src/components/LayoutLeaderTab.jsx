@@ -1,8 +1,9 @@
-import React, { useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { calculateStatus } from "../utils/statusUtils";
 import { API_BASE_URL } from '../config';
+import EditableIpName from './EditableIpName';
 
 const getRowStyle = (row) => {
   if (row.layoutClosed) return "bg-muted text-muted-foreground line-through"; // Completed
@@ -42,8 +43,6 @@ const inputStyles = "w-full px-3 py-1.5 rounded-md border border-border bg-card 
   "focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 " +
   "disabled:opacity-50 disabled:cursor-not-allowed " +
   "transition-colors duration-200";
-
-// 添加一個通用的選擇框樣式類
 const selectStyles = "w-full px-3 py-1.5 rounded-md border border-border bg-card text-card-foreground " +
   "focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 " +
   "disabled:opacity-50 disabled:cursor-not-allowed " +
@@ -136,7 +135,9 @@ export default function LayoutLeaderTab({
   setCurrentProjectId,
   currentUser
 }) {
-  const [showDateDiff, setShowDateDiff] = React.useState(false);
+  const [showDateDiff, setShowDateDiff] = useState(false);
+  const [itemsToDelete, setItemsToDelete] = useState([]); // New state for deferred deletions
+  const [pendingSplitItems, setPendingSplitItems] = useState([]); // New state for pending split items
 
   // Removed useEffect that recalculates status on currentProjectId change
 
@@ -149,117 +150,144 @@ export default function LayoutLeaderTab({
     setLayoutLeaderSortConfig({ key, direction });
   };
 
-  const handleFieldChange = (idx, field, value) => {
-    console.log("Field change triggered:", field, value);
-    const updated = [...projectsData[currentProjectId]];
-    
-    // Map the field names to their layout leader specific versions
-    const fieldMapping = {
-      'schematicFreeze': 'layoutLeaderSchematicFreeze',
-      'lvsClean': 'layoutLeaderLvsClean'
-    };
-    
-    // Always use the layout leader specific field names
-    const actualField = fieldMapping[field] || field;
-    updated[idx][actualField] = value instanceof Date ? value.toISOString().split("T")[0] : value;
+  const handleFieldChange = (identifier, field, value) => {
+    const newValue = value instanceof Date ? value.toISOString().split("T")[0] : value;
 
-    // Recalculate mandays if dates are present and valid
-    const startDateStr = updated[idx].layoutLeaderSchematicFreeze;
-    const endDateStr = updated[idx].layoutLeaderLvsClean;
-    if (startDateStr && endDateStr) {
-      const start = new Date(startDateStr);
-      const end = new Date(endDateStr);
-      if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end >= start) {
-        updated[idx].mandays = calculateMandaysFromDates(startDateStr, endDateStr).toString();
-      }
+    // Try to update existing projectsData
+    let updatedInProjectsData = false;
+    setProjectsData(prev => ({
+      ...prev,
+      [currentProjectId]: prev[currentProjectId].map(item => {
+        // Use item.id for pending items, item.ipName for existing items
+        const itemIdentifier = item.isPending ? item.id : item.ipName;
+        if (itemIdentifier === identifier) {
+          updatedInProjectsData = true;
+          return { ...item, [field]: newValue };
+        }
+        return item;
+      })
+    }));
+
+    // If not found in projectsData, try to update pendingSplitItems
+    if (!updatedInProjectsData) {
+      setPendingSplitItems(prev =>
+        prev.map(item =>
+          item.id === identifier ? { ...item, [field]: newValue } : item
+        )
+      );
     }
-
-    // Update the status explicitly using calculateStatus
-    updated[idx].status = calculateStatus(updated[idx]);
-
-    setProjectsData({
-      ...projectsData,
-      [currentProjectId]: updated
-    });
   };
 
-  const sortedData = (Array.isArray(projectsData[currentProjectId]) ? projectsData[currentProjectId] : [])
-    .filter((row) =>
-      (!layoutOwnerFilter || row.layoutOwner === layoutOwnerFilter) &&
-      (
-        currentProjectId === "" ||
-        row.projectId === undefined ||
-        row.projectId === "" ||
-        currentProjectId === row.projectId
-      )
-    )
-    .map(row => {
-      // 優先用 layoutLeader 欄位，否則用 designer 欄位
-      const start = row.layoutLeaderSchematicFreeze || row.schematicFreeze;
-      const end = row.layoutLeaderLvsClean || row.lvsClean;
-      const mandays = calculateMandaysFromDates(start, end);
-      return {
-        ...row,
-        status: calculateStatus(row),
-        mandays: mandays || 0,
-        layoutClosed: row.layoutClosed === true || row.layoutClosed === 1
-      };
-    })
-    .sort((a, b) => {
-      const key = layoutLeaderSortConfig.key;
-      if (!key) return 0;
-      
-      if (key === 'mandays') {
-        return layoutLeaderSortConfig.direction === "asc"
-          ? (a.mandays || 0) - (b.mandays || 0)
-          : (b.mandays || 0) - (a.mandays || 0);
+  const sortedData = React.useMemo(() => {
+    const existingData = Array.isArray(projectsData[currentProjectId]) ? projectsData[currentProjectId] : [];
+    // Filter out items that are marked for deletion
+    const filteredExistingData = existingData.filter(item => !itemsToDelete.includes(item.ipName));
+
+    const displayData = [];
+    const addedPendingIpNames = new Set(); // To keep track of pending items already added
+
+    filteredExistingData.forEach(item => {
+      displayData.push(item);
+      // Check if this item has a corresponding pending split item
+      const splitItem = pendingSplitItems.find(
+        pending => pending.ipName === `${item.ipName}_part1`
+      );
+      if (splitItem) {
+        displayData.push(splitItem);
+        addedPendingIpNames.add(splitItem.ipName);
       }
-      
-      const valA = a[key]?.toString() || "";
-      const valB = b[key]?.toString() || "";
-      return layoutLeaderSortConfig.direction === "asc"
-        ? valA.localeCompare(valB)
-        : valB.localeCompare(valA);
     });
 
+    // Add any pending items that were not associated with an existing item (e.g., if the original was deleted)
+    pendingSplitItems.forEach(pending => {
+      if (!addedPendingIpNames.has(pending.ipName)) {
+        displayData.push(pending);
+      }
+    });
+
+    return displayData
+      .filter((row) =>
+        (!layoutOwnerFilter || row.layoutOwner === layoutOwnerFilter) &&
+        (
+          currentProjectId === "" ||
+          row.projectId === undefined ||
+          row.projectId === "" ||
+          currentProjectId === row.projectId
+        )
+      )
+      .map(row => {
+        // 優先用 layoutLeader 欄位，否則用 designer 欄位
+        const start = row.layoutLeaderSchematicFreeze || row.schematicFreeze;
+        const end = row.layoutLeaderLvsClean || row.lvsClean;
+        const mandays = calculateMandaysFromDates(start, end);
+        return {
+          ...row,
+          status: calculateStatus(row),
+          mandays: mandays || 0,
+          layoutClosed: row.layoutClosed === true || row.layoutClosed === 1
+        };
+      })
+      .sort((a, b) => {
+        const key = layoutLeaderSortConfig.key;
+        if (!key) return 0;
+        
+        if (key === 'mandays') {
+          return layoutLeaderSortConfig.direction === "asc"
+            ? (a.mandays || 0) - (b.mandays || 0)
+            : (b.mandays || 0) - (a.mandays || 0);
+        }
+        
+        const valA = a[key]?.toString() || "";
+        const valB = b[key]?.toString() || "";
+        return layoutLeaderSortConfig.direction === "asc"
+          ? valA.localeCompare(valB)
+          : valB.localeCompare(valA);
+      });
+  }, [projectsData, currentProjectId, layoutOwnerFilter, layoutLeaderSortConfig, itemsToDelete, pendingSplitItems]);
+
   const columnStyles = {
-    ipName: { width: 200, padding: 8 },
+    ipName: { width: 260, padding: 8 }, // Increased width
     designer: { width: 160, padding: 8 },
     schematicFreeze: { width: 140, padding: 8 },
     lvsClean: { width: 140, padding: 8 },
     mandays: { width: 80, padding: 8 },
     layoutOwner: { width: 160, padding: 8 },
-    status: { width: 100, padding: 8 },
-    actions: { width: 220, padding: 8 },
+    status: { width: 160, padding: 8 },
+    actions: { width: 300, padding: 8 },
   };
 
-  const handleSplitRow = (idx) => {
-    const row = projectsData[currentProjectId][idx];
-    const newRow = {
-      ...row,
-      ipName: `${row.ipName}_1`,
-      isSubIp: true,
-      closed: false,
-      reopened: false
-    };
-    newRow.status = calculateStatus(newRow);
+  const handleSplitRow = (originalItem) => {
+    const confirmSplit = window.confirm("Are you sure you want to split this item?");
+    if (!confirmSplit) return;
 
-    const updated = [...projectsData[currentProjectId]];
-    updated.splice(idx + 1, 0, newRow);
-    setProjectsData({
-      ...projectsData,
-      [currentProjectId]: updated
-    });
+    const newEntry = {
+      ...originalItem,
+      id: `${originalItem.ipName}_part1_${Date.now()}`, // Ensure unique ID for React
+      ipName: `${originalItem.ipName}_part1`, // Suggest a new name
+      isSubIp: true, // Mark as sub-task
+      layoutClosed: 0, // Ensure it's not closed
+      version: 1, // Start with version 1
+      isPending: true, // Mark as pending
+      // Reset dates and owner for the new split task
+      layoutLeaderSchematicFreeze: null,
+      layoutLeaderLvsClean: null,
+      layoutOwner: originalItem.layoutOwner, // Inherit original layoutOwner
+      reworkNote: "",
+      actualHours: null,
+    };
+
+    setPendingSplitItems(prev => [...prev, newEntry]);
   };
 
-  const handleCloseRow = (idx) => {
-    const updated = [...projectsData[currentProjectId]];
-    updated[idx] = {
-      ...updated[idx],
-      layoutClosed: 1,
-      lastModified: new Date().toISOString(),
-      modifiedBy: currentUser
-    };
+  const handleCloseRow = (ipName) => {
+    const updated = projectsData[currentProjectId].map(item =>
+      item.ipName === ipName ? {
+        ...item,
+        layoutClosed: 1,
+        lastModified: new Date().toISOString(),
+        modifiedBy: currentUser
+      } : item
+    );
 
     // 只更新前端狀態
     setProjectsData(prev => ({
@@ -268,14 +296,15 @@ export default function LayoutLeaderTab({
     }));
   };
 
-  const handleReopenRow = (idx) => {
-    const updated = [...projectsData[currentProjectId]];
-    updated[idx] = {
-      ...updated[idx],
-      layoutClosed: 0,
-      lastModified: new Date().toISOString(),
-      modifiedBy: currentUser
-    };
+  const handleReopenRow = (ipName) => {
+    const updated = projectsData[currentProjectId].map(item =>
+      item.ipName === ipName ? {
+        ...item,
+        layoutClosed: 0,
+        lastModified: new Date().toISOString(),
+        modifiedBy: currentUser
+      } : item
+    );
 
     // 只更新前端狀態
     setProjectsData(prev => ({
@@ -284,23 +313,29 @@ export default function LayoutLeaderTab({
     }));
   };
 
-  const handleDeleteRow = (idx) => {
+  const handleDeleteRow = (itemToDelete) => {
     const confirmDelete = window.confirm("Are you sure you want to delete this row?");
     if (!confirmDelete) return;
 
-    // 只更新前端狀態
-    const newProjectsData = { ...projectsData };
-    const updated = [...(newProjectsData[currentProjectId] || [])];
-    updated.splice(idx, 1);
-    newProjectsData[currentProjectId] = updated;
-    setProjectsData(newProjectsData);
+    // Add the item's IP name to the itemsToDelete state
+    setItemsToDelete(prev => [...prev, itemToDelete.ipName]);
+
+    // Immediately remove the item from the displayed data
+    setProjectsData(prev => ({
+      ...prev,
+      [currentProjectId]: prev[currentProjectId].filter(item => item.ipName !== itemToDelete.ipName)
+    }));
   };
 
   const handleSubmit = async () => {
     try {
       const dataSource = Array.isArray(projectsData?.[currentProjectId]) ? projectsData[currentProjectId] : [];
+      // Filter out items that are marked for deletion from the existing data before combining
+      const dataToSubmit = dataSource.filter(item => !itemsToDelete.includes(item.ipName));
+      const finalDataToSubmit = [...dataToSubmit, ...pendingSplitItems]; // Include pending split items
+
       // enrich 一次資料，強制格式化日期
-      const enriched = dataSource.map(item => {
+      const enriched = finalDataToSubmit.map(item => {
         const layoutLeaderSchematicFreeze = toDateString(item.layoutLeaderSchematicFreeze) || toDateString(item.schematicFreeze);
         const layoutLeaderLvsClean = toDateString(item.layoutLeaderLvsClean) || toDateString(item.lvsClean);
         return {
@@ -319,8 +354,8 @@ export default function LayoutLeaderTab({
         alert('有異常資料，請檢查 IP Name、Layout Owner、Schematic Freeze、LVS Clean！');
         return;
       }
-      if (!dataSource.length) {
-        alert('No data to submit');
+      if (!finalDataToSubmit.length && !itemsToDelete.length) { // Check if there's anything to submit or delete
+        alert('No data to submit or delete');
         return;
       }
       // mapping 成送出格式
@@ -346,6 +381,7 @@ export default function LayoutLeaderTab({
         body: JSON.stringify({
           projectId: currentProjectId,
           data: formattedData,
+          itemsToDelete: itemsToDelete, // Send items to delete
           userId: currentUser,
           role: 'layoutLeader'
         })
@@ -360,6 +396,8 @@ export default function LayoutLeaderTab({
       }
       // Submit 成功後自動 fetch 最新資料
       await fetchData(currentProjectId, setProjectsData);
+      setItemsToDelete([]); // Clear items to delete after successful submission
+      setPendingSplitItems([]); // Clear pending split items after successful submission
       alert("Changes submitted successfully!");
     } catch (err) {
       console.error('Error submitting changes:', err);
@@ -424,7 +462,8 @@ export default function LayoutLeaderTab({
               <label className="font-semibold whitespace-nowrap">Show Date Difference:</label>
               <button
                 onClick={() => setShowDateDiff(!showDateDiff)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 
+                  focus:ring-primary focus:ring-offset-2 ${
                   showDateDiff ? 'bg-primary' : 'bg-gray-200'
                 }`}
               >
@@ -456,16 +495,51 @@ export default function LayoutLeaderTab({
             <table className="w-full border-collapse">
               <thead className="bg-muted/50">
                 <tr>
-                  {[
-                    { key: 'ipName', label: 'IP Name', width: '180px' },
-                    { key: 'designer', label: 'Designer', width: '180px' },
-                    { key: 'schematicFreeze', label: 'Schematic Freeze', width: '180px' },
-                    { key: 'lvsClean', label: 'LVS Clean', width: '180px' },
-                    { key: 'mandays', label: 'Mandays', width: '100px' },
-                    { key: 'layoutOwner', label: 'Layout Owner', width: '180px' },
-                    { key: 'status', label: 'Status', width: '160px' },
-                    { key: 'actions', label: 'Actions', width: '300px' }
-                  ].map(({ key, label, width }) => (
+                  {/* Corrected syntax for mapping table headers */}
+                  {([{ 
+                    key: 'ipName',
+                    label: 'IP Name',
+                    width: '200px'
+                  },
+                  {
+                    key: 'designer',
+                    label: 'Designer',
+                    width: '180px'
+                  },
+                  {
+                    key: 'schematicFreeze',
+                    label: 'Schematic Freeze',
+                    width: '180px'
+                  },
+                  {
+                    key: 'lvsClean',
+                    label: 'LVS Clean',
+                    width: '180px'
+                  },
+                  {
+                    key: 'mandays',
+                    label: 'Mandays',
+                    width: '100px'
+                  },
+                  {
+                    key: 'layoutOwner',
+                    label: 'Layout Owner',
+                    width: '180px'
+                  },
+                  {
+                    key: 'status',
+                    label: 'Status',
+                    width: '160px'
+                  },
+                  {
+                    key: 'actions',
+                    label: 'Actions',
+                    width: '300px'
+                  }]).map(({
+                    key,
+                    label,
+                    width
+                  }) => (
                     <th
                       key={key}
                       onClick={() => handleSort(key)}
@@ -490,22 +564,21 @@ export default function LayoutLeaderTab({
                     </td>
                   </tr>
                 ) : (
-                  sortedData.map((row, idx) => (
+                  sortedData.map((row) => (
                     <tr
-                      key={idx}
-                      className={`transition-colors duration-200 ${getRowStyle(row)}`}
+                      key={row.id || row.ipName} // Use row.id for stability, fallback to ipName
+                      className={`transition-colors duration-200 ${getRowStyle(row)} ${row.isPending ? 'bg-blue-50' : ''}`}
                     >
-                      <td className="p-3" style={{ minWidth: '180px', maxWidth: '180px', textAlign: 'center' }}>
+                      <td className="p-3" style={{ minWidth: columnStyles.ipName.width, maxWidth: columnStyles.ipName.width, textAlign: 'center' }}>
                         <div className="flex items-center gap-1">
                           {row.isSubIp && <span className="ml-3">↳</span>}
                           {row.isSubIp ? (
-                            <input
-                              type="text"
-                              value={row.ipName}
-                              onChange={e => handleFieldChange(idx, "ipName", e.target.value)}
-                              className={inputStyles + " italic"}
-                              style={{ textDecoration: row.layoutClosed ? 'line-through' : 'none' }}
+                            <EditableIpName
+                              initialIpName={row.ipName}
+                              id={row.id} // Pass the stable ID
+                              onSave={(id, newIpName) => handleFieldChange(id, "ipName", newIpName)}
                               disabled={row.layoutClosed}
+                              layoutClosed={row.layoutClosed}
                             />
                           ) : (
                             <span style={{ textDecoration: row.layoutClosed ? 'line-through' : 'none' }}>{row.ipName}</span>
@@ -523,7 +596,7 @@ export default function LayoutLeaderTab({
                                   ? new Date(row.schematicFreeze)
                                   : null
                             }
-                            onChange={date => handleFieldChange(idx, "schematicFreeze", date)}
+                            onChange={date => handleFieldChange(row.isSubIp ? row.id : row.ipName, "schematicFreeze", date)} // Pass stable identifier
                             dateFormat="yyyy-MM-dd"
                             className="date-picker"
                             disabled={row.layoutClosed}
@@ -554,7 +627,7 @@ export default function LayoutLeaderTab({
                                   ? new Date(row.lvsClean)
                                   : null
                             }
-                            onChange={date => handleFieldChange(idx, "lvsClean", date)}
+                            onChange={date => handleFieldChange(row.isSubIp ? row.id : row.ipName, "lvsClean", date)} // Pass stable identifier
                             dateFormat="yyyy-MM-dd"
                             className="date-picker"
                             disabled={row.layoutClosed}
@@ -579,7 +652,7 @@ export default function LayoutLeaderTab({
                       <td className="p-3" style={{ minWidth: '180px', maxWidth: '180px', textAlign: 'center' }}>
                         <select
                           value={row.layoutOwner || ""}
-                          onChange={e => handleFieldChange(idx, "layoutOwner", e.target.value)}
+                          onChange={e => handleFieldChange(row.isSubIp ? row.id : row.ipName, "layoutOwner", e.target.value)} // Pass stable identifier
                           disabled={row.layoutClosed}
                           className={selectStyles}
                           style={{ textDecoration: row.layoutClosed ? 'line-through' : 'none' }}
@@ -599,7 +672,7 @@ export default function LayoutLeaderTab({
                         <div className="flex flex-col gap-2 min-w-[300px]">
                           <div className="flex gap-2">
                             <button
-                              onClick={() => handleSplitRow(idx)}
+                              onClick={() => handleSplitRow(row)} // Pass the entire row object
                               className={`w-20 px-2 py-1.5 bg-blue-500 text-white rounded-md text-xs font-medium 
                                 transition-colors hover:bg-blue-600 focus:outline-none focus:ring-2 
                                 focus:ring-blue-500 focus:ring-offset-2 ${row.layoutClosed ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -610,7 +683,7 @@ export default function LayoutLeaderTab({
                             {row.layoutClosed ? (
                               <span style={{ textDecoration: 'none' }}>
                                 <button
-                                  onClick={() => handleReopenRow(idx)}
+                                  onClick={() => handleReopenRow(row.ipName)} // Pass ipName instead of idx
                                   className={`w-20 px-2 py-1.5 bg-emerald-500 text-white rounded-md text-xs font-medium \
                                     transition-colors hover:bg-emerald-600 focus:outline-none focus:ring-2 \
                                     focus:ring-emerald-500 focus:ring-offset-2 shadow-sm hover:shadow-md`}
@@ -620,7 +693,7 @@ export default function LayoutLeaderTab({
                               </span>
                             ) : (
                               <button
-                                onClick={() => handleCloseRow(idx)}
+                                onClick={() => handleCloseRow(row.ipName)} // Pass ipName instead of idx
                                 className="w-20 px-2 py-1.5 bg-orange-500 text-white rounded-md text-xs font-medium \
                                   transition-colors hover:bg-orange-600 focus:outline-none focus:ring-2 \
                                   focus:ring-orange-500 focus:ring-offset-2 shadow-sm hover:shadow-md"
@@ -629,7 +702,7 @@ export default function LayoutLeaderTab({
                               </button>
                             )}
                             <button
-                              onClick={() => handleDeleteRow(idx)}
+                              onClick={() => handleDeleteRow(row)}
                               className="w-20 px-2 py-1.5 bg-red-500 text-white rounded-md text-xs font-medium 
                                 transition-colors hover:bg-red-600 focus:outline-none focus:ring-2 
                                 focus:ring-red-500 focus:ring-offset-2 shadow-sm hover:shadow-md"
