@@ -1,18 +1,41 @@
 version: '3.8'
-
 services:
-  oracle:
-    image: gvenzl/oracle-xe:latest
-    container_name: oracle-xe
+  openldap:
+    build:
+      context: ./ldap
+      dockerfile: Dockerfile
+    container_name: my-local-ldap
     ports:
-      - "1521:1521"  # Oracle 監聽端口
-      - "5500:5500"  # Enterprise Manager Express 端口
-    environment:
-      - ORACLE_PASSWORD=123456  # 設置 SYS 和 SYSTEM 用戶的密碼
+      - "389:389"
+      - "636:636"
     volumes:
-      - oracle_data:/opt/oracle/oradata  # 持久化數據
-    shm_size: '2gb'  # 共享內存大小
-    restart: unless-stopped
+      - ldap_data:/var/lib/ldap
+      - ldap_config:/etc/ldap/slapd.d
+      
+      
+    environment:
+      LDAP_ORGANISATION: "My Local Dev"
+      LDAP_DOMAIN: "dev.local"
+      LDAP_ADMIN_PASSWORD: "adminpassword"
+    networks:
+      - ldap-net
+
+  phpldapadmin:
+    image: osixia/phpldapadmin:0.9.0
+    container_name: my-local-ldap-admin
+    ports:
+      - "8080:80"
+    environment:
+      PHPLDAPADMIN_LDAP_HOSTS: openldap
+      PHPLDAPADMIN_HTTPS: "false"
+    depends_on:
+      - openldap
+    networks:
+      - ldap-net
+
+networks:
+  ldap-net:
 
 volumes:
-  oracle_data: 
+  ldap_data:
+  ldap_config:

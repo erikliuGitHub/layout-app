@@ -629,9 +629,9 @@ export default function DesignerTab({
                       onChange={(e) => handleFieldChange(item._id, "designer", e.target.value)}
                       className={`w-full px-2 py-1 rounded border border-border bg-card text-card-foreground ${item.layoutClosed ? 'line-through' : ''}`}
                     >
-                      <option value="">Select Designer</option>
-                      {allDesigners.map(d => (
-                        <option key={d} value={d}>{d}</option>
+                      <option value="">選擇Designer</option>
+                      {allDesigners.map(designer => (
+                        <option key={designer} value={designer}>{designer}</option>
                       ))}
                     </select>
                   </td>

@@ -657,9 +657,9 @@ export default function LayoutLeaderTab({
                           className={selectStyles}
                           style={{ textDecoration: row.layoutClosed ? 'line-through' : 'none' }}
                         >
-                          <option value="">-- Select --</option>
-                          {allLayoutOwners.map(owner => (
-                            <option key={owner} value={owner}>{owner}</option>
+                          <option value="">選擇Layout Owner</option>
+                          {allLayoutOwners.map(layoutOwner => (
+                            <option key={layoutOwner} value={layoutOwner}>{layoutOwner}</option>
                           ))}
                         </select>
                       </td>

@@ -1,0 +1,11 @@
+dn: ou=users,dc=dev,dc=local
+objectClass: organizationalUnit
+ou: users
+
+dn: uid=700435,ou=users,dc=dev,dc=local
+objectClass: inetOrgPerson
+cn: Erik Liu (劉羽)
+sn: Liu
+uid: 700435
+mail: ERIKLIU@AIROHA.COM
+userPassword: 1

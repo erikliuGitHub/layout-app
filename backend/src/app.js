@@ -1,11 +1,25 @@
+import dotenv from 'dotenv';
+import path from 'path';
+
+// Load environment-specific .env file
+const envFile = process.env.APP_ENV ? `.env.${process.env.APP_ENV}` : '.env';
+const envPath = path.resolve(process.cwd(), envFile);
+
+console.log(`🔧 Environment: ${process.env.APP_ENV || 'default'}`);
+console.log(`📁 Loading config from: ${envPath}`);
+dotenv.config({ path: envPath });
+console.log(`🔗 Oracle Connection: ${process.env.ORACLE_CONNECTION_STRING}`);
+console.log(`🔐 Auth Mode: ${process.env.AUTH_MODE}`);
 import express from 'express';
 import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import { executeQuery, executeUpdate, initializeDatabase } from './config/db.js';
 import layoutRoutes from './routes/layouts.js';
+import authRoutes from './routes/auth.js';
+import userRoutes from './routes/users.js';
 import fs from 'fs';
 import csv from 'csv-parser';
-import path from 'path';
+import { authenticateUser } from './services/authService.js';
 
 const app = express();
 const port = 3001;
@@ -25,8 +39,11 @@ app.use((req, res, next) => {
   next();
 });
 
-// API 路由 - 要在錯誤處理之前設置
+
+
+app.use('/api/auth', authRoutes);
 app.use('/api/layouts', layoutRoutes);
+app.use('/api/users', userRoutes);
 
 // 測試路由
 app.get('/api/test', (req, res) => {

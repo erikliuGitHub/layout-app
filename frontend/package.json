@@ -5,7 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:home": "vite --host 0.0.0.0 --mode home",
+    "dev:work": "vite --host 0.0.0.0 --mode work",
+    "dev:company": "vite --host 0.0.0.0 --mode company",
     "build": "vite build",
+    "build:home": "vite build --mode home",
+    "build:work": "vite build --mode work",
+    "build:company": "vite build --mode company",
     "lint": "eslint .",
     "preview": "vite preview"
   },

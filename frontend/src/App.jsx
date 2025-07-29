@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useContext } from "react";
 import './index.css';
 import { calculateMandays, calculateEndDate, getRandomDate } from './utils/dateUtils';
 import { getISOWeek, projectBarInfo, dailyWorkloads } from './utils/ganttUtils';
@@ -6,6 +6,8 @@ import { exportCSV } from './utils/csvUtils';
 import { calculateStatus } from "./utils/statusUtils";
 import Papa from "papaparse";
 import { API_BASE_URL } from './config';
+import { AuthContext } from './contexts/AuthContext';
+import Login from './components/Login';
 
 const importCSV = (file, callback) => {
   Papa.parse(file, {
@@ -35,11 +37,11 @@ import LayoutTab from "./components/LayoutTab";
 import GanttChart from "./components/GanttChart";
 
 export default function App() {
+  const { user, logout } = useContext(AuthContext);
   const now = new Date().toLocaleString();
 
   const [projectsData, setProjectsData] = useState({});
   const [currentProjectId, setCurrentProjectId] = useState("PJT-2025-Alpha");
-  const [currentUser, setCurrentUser] = useState("");
   const [showNewProjectAlert, setShowNewProjectAlert] = useState(false);
   const [currentTab, setCurrentTab] = useState("Designer");
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
@@ -59,11 +61,12 @@ export default function App() {
   const [allDesigners, setAllDesigners] = useState([]);
   const [allLayoutOwners, setAllLayoutOwners] = useState([]);
 
-  // 初始化數據加載
+  // Initialize data loading
   useEffect(() => {
+    if (!user) return;
     const initializeData = async () => {
       try {
-        // 獲取所有項目數據
+        // Fetch all project data
         const response = await fetch(`${API_BASE_URL}/layouts`);
         if (!response.ok) {
           throw new Error(`Failed to fetch data: ${response.status}`);
@@ -74,52 +77,73 @@ export default function App() {
           throw new Error('Failed to fetch initial data');
         }
 
-        // 設置項目數據
+        // Set project data
         const projectData = result.data || {};
         setProjectsData(projectData);
 
-        // 更新項目ID列表
+        // Update project ID list
         const projectIds = Object.keys(projectData);
         if (projectIds.length > 0) {
           setAllProjectIds(projectIds);
           setCurrentProjectId(projectIds[0]);
         }
 
-        // 從所有項目數據中提取設計師和佈局負責人列表
-        const designers = new Set();
-        const layoutOwners = new Set();
+        // Fetch user lists from database instead of extracting from project data
+        try {
+          const userResponse = await fetch(`${API_BASE_URL}/users/lists`);
+          if (userResponse.ok) {
+            const userResult = await userResponse.json();
+            if (userResult.success) {
+              console.log('User data loaded:', userResult.data.summary);
+              setAllDesigners(userResult.data.designers);
+              setAllLayoutOwners(userResult.data.layoutOwners);
+            } else {
+              console.warn('Failed to load user lists, falling back to project data extraction');
+              // Fallback to old method if API fails
+              const designers = new Set();
+              const layoutOwners = new Set();
 
-        Object.values(projectData).forEach(items => {
-          items.forEach(item => {
-            if (item.designer) designers.add(item.designer);
-            if (item.layoutOwner) layoutOwners.add(item.layoutOwner);
+              Object.values(projectData).forEach(items => {
+                items.forEach(item => {
+                  if (item.designer) designers.add(item.designer);
+                  if (item.layoutOwner) layoutOwners.add(item.layoutOwner);
+                });
+              });
+
+              setAllDesigners(Array.from(designers));
+              setAllLayoutOwners(Array.from(layoutOwners));
+            }
+          }
+        } catch (userErr) {
+          console.warn('Error loading user lists:', userErr);
+          // Fallback to old method if API call fails
+          const designers = new Set();
+          const layoutOwners = new Set();
+
+          Object.values(projectData).forEach(items => {
+            items.forEach(item => {
+              if (item.designer) designers.add(item.designer);
+              if (item.layoutOwner) layoutOwners.add(item.layoutOwner);
+            });
           });
-        });
 
-        const designersList = Array.from(designers);
-        const layoutOwnersList = Array.from(layoutOwners);
-
-        setAllDesigners(designersList);
-        setAllLayoutOwners(layoutOwnersList);
-
-        // 設置當前用戶（如果未設置）
-        if (!currentUser && layoutOwnersList.length > 0) {
-          setCurrentUser(layoutOwnersList[0]);
+          setAllDesigners(Array.from(designers));
+          setAllLayoutOwners(Array.from(layoutOwners));
         }
 
       } catch (err) {
         console.error('Error initializing data:', err);
-        alert(`初始化數據失敗: ${err.message}`);
+        alert(`Failed to initialize data: ${err.message}`);
       }
     };
 
     initializeData();
-  }, []);
+  }, [user]);
 
-  // 刷新數據的函數
+  // Function to refresh data
   const refreshData = async () => {
     try {
-      // 獲取所有項目的最新數據
+      // Fetch latest data for all projects
       const projectIds = Object.keys(projectsData);
       for (const projectId of projectIds) {
         const response = await fetch(`${API_BASE_URL}/layouts/${projectId}`);
@@ -131,13 +155,13 @@ export default function App() {
           throw new Error(`Invalid response for project ${projectId}`);
         }
         
-        // 更新項目數據
+        // Update project data
         setProjectsData(prev => ({
           ...prev,
           [projectId]: result.data || []
         }));
 
-        // 更新用戶列表
+        // Update user lists
         const designers = new Set();
         const layoutOwners = new Set();
         (result.data || []).forEach(item => {
@@ -150,9 +174,15 @@ export default function App() {
       }
     } catch (err) {
       console.error('Error refreshing data:', err);
-      alert(`刷新數據失敗: ${err.message}`);
+      alert(`Failed to refresh data: ${err.message}`);
     }
   };
+
+  if (!user) {
+    return <Login />;
+  }
+
+  const currentUser = user.pernr;
 
   return (
     <>
@@ -165,25 +195,16 @@ export default function App() {
       </div>
       <div>
         <div>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <div style={{ display: "flex", alignItems: "center" }}>
               <label style={{ marginRight: "8px" }}>Logged in as:</label>
-              <select
-                value={currentUser}
-                onChange={(e) => setCurrentUser(e.target.value)}
-                style={{
-                  padding: "4px 8px",
-                  borderRadius: "4px",
-                  border: "1px solid #d1d5db"
-                }}
-              >
-                {allLayoutOwners.map(user => (
-                  <option key={user} value={user}>{user}</option>
-                ))}
-              </select>
+              <span className="font-semibold">{user.pernr} {user.EMP_NAME}</span>
             </div>
-            <div style={{ color: "#666" }}>
-              Current Time: {now}
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <div style={{ color: "#666", marginRight: "16px" }}>
+                Current Time: {now}
+              </div>
+              <button onClick={logout} className="logout-button">Logout</button>
             </div>
           </div>
           <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>

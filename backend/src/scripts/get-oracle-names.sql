@@ -1,0 +1,82 @@
+-- 查詢 Oracle 系統中的真實 RFACD 人員名單
+-- 這些是系統中實際應該使用的 Designer 和 Layout Owner 姓名
+
+-- 查詢所有 RFACD 組織的人員並按角色分類
+SELECT 
+    PERNR,
+    EMP_NAME,
+    MC_STEXT,
+    CASE 
+        WHEN UPPER(MC_STEXT) LIKE '%CAD/AL%' THEN 'LAYOUT'
+        WHEN UPPER(MC_STEXT) LIKE 'RFACD%' THEN 'DESIGNER'
+        ELSE 'OTHER'
+    END AS ROLE
+FROM IF_ODR.V_RD_EMP_DATA 
+WHERE UPPER(MC_STEXT) LIKE 'RFACD%'
+ORDER BY 
+    CASE 
+        WHEN UPPER(MC_STEXT) LIKE '%CAD/AL%' THEN 'LAYOUT'
+        WHEN UPPER(MC_STEXT) LIKE 'RFACD%' THEN 'DESIGNER'
+        ELSE 'OTHER'
+    END,
+    EMP_NAME;
+
+-- 分別列出 Designer 和 Layout Owner
+-- Designer 列表 (RFACD 組織但不包含 CAD/AL)
+SELECT 'DESIGNER' AS ROLE, EMP_NAME
+FROM IF_ODR.V_RD_EMP_DATA 
+WHERE UPPER(MC_STEXT) LIKE 'RFACD%' 
+  AND UPPER(MC_STEXT) NOT LIKE '%CAD/AL%'
+ORDER BY EMP_NAME;
+
+-- Layout Owner 列表 (RFACD 組織且包含 CAD/AL)
+SELECT 'LAYOUT' AS ROLE, EMP_NAME
+FROM IF_ODR.V_RD_EMP_DATA 
+WHERE UPPER(MC_STEXT) LIKE 'RFACD%' 
+  AND UPPER(MC_STEXT) LIKE '%CAD/AL%'
+ORDER BY EMP_NAME;
+
+-- 統計資訊
+SELECT 
+    'DESIGNER' AS ROLE,
+    COUNT(*) AS COUNT
+FROM IF_ODR.V_RD_EMP_DATA 
+WHERE UPPER(MC_STEXT) LIKE 'RFACD%' 
+  AND UPPER(MC_STEXT) NOT LIKE '%CAD/AL%'
+UNION ALL
+SELECT 
+    'LAYOUT' AS ROLE,
+    COUNT(*) AS COUNT
+FROM IF_ODR.V_RD_EMP_DATA 
+WHERE UPPER(MC_STEXT) LIKE 'RFACD%' 
+  AND UPPER(MC_STEXT) LIKE '%CAD/AL%'
+UNION ALL
+SELECT 
+    'TOTAL' AS ROLE,
+    COUNT(*) AS COUNT
+FROM IF_ODR.V_RD_EMP_DATA 
+WHERE UPPER(MC_STEXT) LIKE 'RFACD%';
+
+-- 檢查目前資料庫中使用的測試姓名
+-- 這些是需要被替換的舊測試姓名
+SELECT 'CURRENT_DESIGNERS' AS TYPE, designer AS NAME, COUNT(*) AS USAGE_COUNT
+FROM layout_tasks 
+WHERE designer IS NOT NULL AND designer != ''
+GROUP BY designer
+ORDER BY designer
+
+UNION ALL
+
+SELECT 'CURRENT_LAYOUT_OWNERS' AS TYPE, layout_owner AS NAME, COUNT(*) AS USAGE_COUNT
+FROM layout_tasks 
+WHERE layout_owner IS NOT NULL AND layout_owner != ''
+GROUP BY layout_owner
+ORDER BY layout_owner;
+
+/*
+執行說明：
+1. 先執行前面的查詢獲取 Oracle 中的真實人員名單
+2. 再執行最後的查詢檢查目前資料庫中的測試姓名
+3. 基於查詢結果建立正確的測試姓名 → 真實姓名對應關係
+4. 更新 update-names.sql 腳本使用正確的對應關係
+*/

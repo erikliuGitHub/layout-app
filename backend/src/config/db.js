@@ -1,21 +1,22 @@
 import oracledb from 'oracledb';
 
-// Oracle 資料庫配置
-const dbConfig = {
-  user: process.env.ORACLE_USER || 'system',
-  password: process.env.ORACLE_PASSWORD || '123456',
-  connectString: process.env.ORACLE_CONNECTION_STRING || 'localhost:1521/XE',
-  poolMin: 10,
-  poolMax: 10,
-  poolIncrement: 0
-};
-
 let oraclePool = null;
 
 // 初始化 Oracle 連接池
 export const initOraclePool = async () => {
   if (!oraclePool) {
+    // Oracle 資料庫配置
+    const dbConfig = {
+      user: process.env.ORACLE_USER || 'system',
+      password: process.env.ORACLE_PASSWORD || '123456',
+      connectString: process.env.ORACLE_CONNECTION_STRING || 'localhost:1521/XE',
+      poolMin: 10,
+      poolMax: 10,
+      poolIncrement: 0
+    };
+    
     try {
+      console.log(`Attempting to connect to: ${dbConfig.connectString}`);
       oraclePool = await oracledb.createPool(dbConfig);
       console.log('Oracle connection pool created');
     } catch (err) {
@@ -119,8 +120,4 @@ export const executeUpdate = async (sql, params = {}) => {
   } finally {
     await connection.close();
   }
-};
-
-const userResult = await executeQuery('SELECT USER FROM DUAL');
-const dbResult = await executeQuery("SELECT SYS_CONTEXT('USERENV', 'DB_NAME') AS DB_NAME FROM DUAL");
-console.log('API connected as user:', userResult.rows[0]?.USER, 'on DB:', dbResult.rows[0]?.DB_NAME); 
+}; 
